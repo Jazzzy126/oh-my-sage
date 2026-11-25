@@ -25,7 +25,9 @@ export default function SettingsModal({open, onClose, onSaved}: SettingsModalPro
     const titleId = useId();
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [testing, setTesting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [testResult, setTestResult] = useState<{success: boolean; message: string} | null>(null);
 
     const [gatewayUrl, setGatewayUrl] = useState('');
     const [llmBaseUrl, setLlmBaseUrl] = useState('');
@@ -41,6 +43,7 @@ export default function SettingsModal({open, onClose, onSaved}: SettingsModalPro
         let cancelled = false;
         setLoading(true);
         setError(null);
+        setTestResult(null);
         setLlmApiKey('');
         setClearApiKey(false);
 
@@ -82,6 +85,58 @@ export default function SettingsModal({open, onClose, onSaved}: SettingsModalPro
     }, [open, saving, onClose]);
 
     if (!open) return null;
+
+    const handleTestConnection = async () => {
+        if (testing || saving || loading) return;
+
+        const baseUrl = llmBaseUrl.trim();
+        const model = llmModel.trim();
+        const apiKey = llmApiKey.trim();
+
+        if (!baseUrl) {
+            setTestResult({success: false, message: '请先填写 API Base URL'});
+            return;
+        }
+        if (!apiKey && (!hasApiKey || clearApiKey)) {
+            setTestResult({success: false, message: '请先填写 API Key'});
+            return;
+        }
+        if (!model) {
+            setTestResult({success: false, message: '请先填写模型名称'});
+            return;
+        }
+
+        setTesting(true);
+        setTestResult(null);
+        try {
+            const response = await fetch('/api/settings/test-llm', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    llmBaseUrl: baseUrl,
+                    llmApiKey: apiKey,
+                    llmModel: model,
+                    clearApiKey,
+                }),
+            });
+            const result = await response.json();
+            if (result.success) {
+                setTestResult({
+                    success: true,
+                    message: `连接成功（耗时 ${result.latencyMs} ms）`,
+                });
+            } else {
+                setTestResult({
+                    success: false,
+                    message: result.error || '连接失败',
+                });
+            }
+        } catch {
+            setTestResult({success: false, message: '网络错误，无法发起连通性测试'});
+        } finally {
+            setTesting(false);
+        }
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -175,7 +230,17 @@ export default function SettingsModal({open, onClose, onSaved}: SettingsModalPro
                     </div>
 
                     <div className={styles.section}>
-                        <div className={styles.sectionTitle}>AI 模型（OpenAI 兼容接口）</div>
+                        <div className={styles.sectionHeader}>
+                            <div className={styles.sectionTitle}>AI 模型（OpenAI 兼容接口）</div>
+                            <button
+                                type="button"
+                                className={styles.testButton}
+                                onClick={handleTestConnection}
+                                disabled={loading || saving || testing}
+                            >
+                                {testing ? '测试中…' : '测试连通性'}
+                            </button>
+                        </div>
 
                         <div className={styles.field}>
                             <label className={styles.label} htmlFor="oms-llm-base-url">
@@ -188,7 +253,10 @@ export default function SettingsModal({open, onClose, onSaved}: SettingsModalPro
                                 placeholder="例如 https://api.openai.com/v1"
                                 value={llmBaseUrl}
                                 disabled={loading || saving}
-                                onChange={(e) => setLlmBaseUrl(e.target.value)}
+                                onChange={(e) => {
+                                    setLlmBaseUrl(e.target.value);
+                                    setTestResult(null);
+                                }}
                             />
                         </div>
 
@@ -204,6 +272,7 @@ export default function SettingsModal({open, onClose, onSaved}: SettingsModalPro
                                         onClick={() => {
                                             setClearApiKey(true);
                                             setLlmApiKey('');
+                                            setTestResult(null);
                                         }}
                                         disabled={loading || saving}
                                     >
@@ -227,6 +296,7 @@ export default function SettingsModal({open, onClose, onSaved}: SettingsModalPro
                                 disabled={loading || saving}
                                 onChange={(e) => {
                                     setLlmApiKey(e.target.value);
+                                    setTestResult(null);
                                     if (clearApiKey && e.target.value.trim()) {
                                         setClearApiKey(false);
                                     }
@@ -246,7 +316,10 @@ export default function SettingsModal({open, onClose, onSaved}: SettingsModalPro
                                     placeholder="例如 gpt-4o"
                                     value={llmModel}
                                     disabled={loading || saving}
-                                    onChange={(e) => setLlmModel(e.target.value)}
+                                    onChange={(e) => {
+                                        setLlmModel(e.target.value);
+                                        setTestResult(null);
+                                    }}
                                 />
                             </div>
                             <div className={styles.field}>
@@ -267,6 +340,14 @@ export default function SettingsModal({open, onClose, onSaved}: SettingsModalPro
                                 />
                             </div>
                         </div>
+                        {testResult && (
+                            <div
+                                className={testResult.success ? styles.testResultSuccess : styles.testResultError}
+                                role="status"
+                            >
+                                {testResult.message}
+                            </div>
+                        )}
                     </div>
 
                     {error && <div className={styles.errorBox} role="alert">{error}</div>}

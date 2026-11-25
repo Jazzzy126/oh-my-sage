@@ -4,6 +4,7 @@
  */
 
 import {createOpenAI} from '@ai-sdk/openai';
+import {generateText} from 'ai';
 
 /**
  * 模型配置
@@ -48,4 +49,64 @@ export function getModelConfigFromEnv(): ModelConfig {
         model: process.env.LLM_MODEL || '',
         temperature: parseFloat(process.env.LLM_TEMPERATURE || '0.7'),
     };
+}
+
+/**
+ * 模型连通性测试结果
+ */
+export interface ModelConnectionTestResult {
+    success: boolean;
+    latencyMs: number;
+    model: string;
+    error?: string;
+}
+
+/**
+ * 提取可读的模型调用错误信息
+ */
+function formatConnectionError(error: unknown): string {
+    if (error instanceof Error) {
+        if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+            return '请求超时，请检查 API Base URL 是否可达';
+        }
+        const anyErr = error as Error & {statusCode?: number; cause?: unknown};
+        if (typeof anyErr.statusCode === 'number') {
+            return `HTTP ${anyErr.statusCode}: ${error.message}`;
+        }
+        return error.message;
+    }
+    return '连接模型失败';
+}
+
+/**
+ * 测试 AI 模型配置连通性（发送一次极简文本生成请求）
+ */
+export async function testModelConnection(
+    config: ModelConfig,
+    options?: {timeoutMs?: number}
+): Promise<ModelConnectionTestResult> {
+    const start = Date.now();
+    const timeoutMs = options?.timeoutMs ?? 15000;
+
+    try {
+        const model = createModel(config);
+        await generateText({
+            model,
+            prompt: 'Reply with OK.',
+            maxTokens: 16,
+            abortSignal: AbortSignal.timeout(timeoutMs),
+        });
+        return {
+            success: true,
+            latencyMs: Date.now() - start,
+            model: config.model,
+        };
+    } catch (error) {
+        return {
+            success: false,
+            latencyMs: Date.now() - start,
+            model: config.model,
+            error: formatConnectionError(error),
+        };
+    }
 }

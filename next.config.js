@@ -1,16 +1,27 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // 服务器端外部包
-  serverExternalPackages: ['ws', 'elliptic', 'bn.js'],
-  
+  // 独立运行输出，便于直接部署到轻量化设备或容器
+  output: 'standalone',
+
   // 实验性功能
   experimental: {
+    serverComponentsExternalPackages: ['ws', 'elliptic', 'bn.js'],
+    // 排除无关目录，避免 standalone 追踪并复制 .git / 测试 / 构建产物
+    outputFileTracingExcludes: {
+      '*': [
+        '.git/**',
+        '**/.git/**',
+        '.sessionstore/**',
+        'rules/**',
+        'coverage/**',
+      ],
+    },
     // 启用服务器操作
     serverActions: {
       bodySizeLimit: '2mb',
     },
   },
-  
+
   // Webpack 配置
   webpack: (config, { isServer }) => {
     if (!isServer) {
@@ -25,7 +36,6 @@ const nextConfig = {
     }
     return config;
   },
-  
 };
 
 module.exports = nextConfig;
