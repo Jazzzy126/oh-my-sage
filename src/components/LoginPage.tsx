@@ -1,8 +1,9 @@
 'use client';
 
 import React, {useState, useCallback, useRef, useEffect} from 'react';
-import {CheckOutlined, LockOutlined, RightOutlined} from '@ant-design/icons';
+import {CheckOutlined, LockOutlined, RightOutlined, SettingOutlined} from '@ant-design/icons';
 import {ThemeToggleButton} from '@/components/ThemeProvider';
+import SettingsModal, {type PublicRuntimeSettings} from '@/components/SettingsModal';
 import styles from './LoginPage.module.css';
 
 interface LoginPageProps {
@@ -34,6 +35,8 @@ export default function LoginPage({onLoginSuccess}: LoginPageProps) {
     const [status, setStatus] = useState<ConnectionState>('idle');
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [shakeSeq, setShakeSeq] = useState(0);
+    const [settingsOpen, setSettingsOpen] = useState(false);
+    const [runtimeSettings, setRuntimeSettings] = useState<PublicRuntimeSettings | null>(null);
     const inputRefs = useRef<Array<HTMLInputElement | null>>([]);
     const isLoggingRef = useRef(false);
     const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -46,6 +49,16 @@ export default function LoginPage({onLoginSuccess}: LoginPageProps) {
 
     useEffect(() => {
         inputRefs.current[0]?.focus();
+        fetch('/api/settings')
+            .then(res => res.json())
+            .then(result => {
+                if (result.success && result.settings) {
+                    setRuntimeSettings(result.settings as PublicRuntimeSettings);
+                }
+            })
+            .catch(() => {
+                // ignore initial settings fetch failure
+            });
         return () => {
             if (successTimerRef.current) clearTimeout(successTimerRef.current);
         };
@@ -205,8 +218,8 @@ export default function LoginPage({onLoginSuccess}: LoginPageProps) {
         return '正在录入登录码';
     })();
 
-    const errorHint = errorMessage?.includes('GATEWAY_URL')
-        ? '请在项目根目录的 .env 中配置 GATEWAY_URL 后重启服务。'
+    const errorHint = errorMessage?.includes('网关地址') || errorMessage?.includes('GATEWAY_URL')
+        ? '请先点击上方「服务配置」填写局域网中枢网关地址。'
         : '登录码会定时刷新，请确认与中枢网关当前显示一致，或检查局域网连通性。';
 
     const ledColor =
@@ -266,7 +279,26 @@ export default function LoginPage({onLoginSuccess}: LoginPageProps) {
                         </span>
                         <span>Oh My Sage</span>
                     </div>
-                    <ThemeToggleButton className={styles.themeToggle}/>
+                    <div className={styles.topBarActions}>
+                        <button
+                            type="button"
+                            className={styles.configButton}
+                            onClick={() => setSettingsOpen(true)}
+                            title="配置网关地址与 AI 模型"
+                        >
+                            <SettingOutlined style={{fontSize: 13}}/>
+                            <span>服务配置</span>
+                            {runtimeSettings && (
+                                <span
+                                    className={`${styles.configDot} ${
+                                        !runtimeSettings.gatewayConfigured ? styles.configDotWarn : ''
+                                    }`}
+                                    aria-hidden="true"
+                                />
+                            )}
+                        </button>
+                        <ThemeToggleButton className={styles.themeToggle}/>
+                    </div>
                 </header>
 
                 <form className={styles.formColumn} onSubmit={handleSubmit} noValidate>
@@ -279,6 +311,37 @@ export default function LoginPage({onLoginSuccess}: LoginPageProps) {
                     <p className={styles.lead}>
                         输入米家自动化极客版显示的 6 位一次性登录码，系统将直接与局域网内的中枢网关建立加密连接。
                     </p>
+
+                    {runtimeSettings && !runtimeSettings.gatewayConfigured && (
+                        <div className={`${styles.configBanner} ${styles.configBannerWarn}`}>
+                            <span className={styles.configBannerText}>
+                                尚未配置中枢网关地址，连接前请先完成设置
+                            </span>
+                            <button
+                                type="button"
+                                className={styles.configBannerBtn}
+                                onClick={() => setSettingsOpen(true)}
+                            >
+                                立即配置
+                            </button>
+                        </div>
+                    )}
+
+                    {runtimeSettings?.gatewayConfigured && (
+                        <div className={styles.configBanner}>
+                            <span className={styles.configBannerText}>
+                                目标网关：{runtimeSettings.gatewayUrl}
+                                {!runtimeSettings.llmConfigured ? '（AI 模型待配置）' : ''}
+                            </span>
+                            <button
+                                type="button"
+                                className={`${styles.configBannerBtn} ${styles.configBannerBtnGhost}`}
+                                onClick={() => setSettingsOpen(true)}
+                            >
+                                修改
+                            </button>
+                        </div>
+                    )}
 
                     <div className={styles.passcodeField}>
                         <div className={styles.passcodeLabelRow}>
@@ -358,8 +421,7 @@ export default function LoginPage({onLoginSuccess}: LoginPageProps) {
                             <li>打开米家自动化极客版网页或中枢网关本地管理后台。</li>
                             <li>在配对提示中读取当前有效的 6 位一次性数字登录码。</li>
                             <li>
-                                确认本机与中枢网关在同一局域网，且服务端已设置{' '}
-                                <code className={styles.helpCode}>GATEWAY_URL</code>。
+                                确认本机与中枢网关在同一局域网，且已在右上角「服务配置」中填写中枢网关地址。
                             </li>
                         </ol>
                     </details>
@@ -369,6 +431,18 @@ export default function LoginPage({onLoginSuccess}: LoginPageProps) {
                     本地局域网直连，登录码仅用于当前会话握手。
                 </footer>
             </section>
+
+            <SettingsModal
+                open={settingsOpen}
+                onClose={() => setSettingsOpen(false)}
+                onSaved={(saved) => {
+                    setRuntimeSettings(saved);
+                    if (status === 'error') {
+                        setStatus('idle');
+                        setErrorMessage(null);
+                    }
+                }}
+            />
 
             {/* 右侧：中枢网关实时握手示意 */}
             <aside

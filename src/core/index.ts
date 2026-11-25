@@ -10,6 +10,7 @@ export type { GatewayManager } from './gateway/manager';
 
 // 工具函数
 export { getDevices, getDevice, fetchMiotSpec, clearMiotSpecCache } from './tools/device';
+export { getDeviceList, scanGraphs } from './tools/gatewayCache';
 export { getGraphs, getGraph, createGraph, updateGraph, deleteGraph, toggleGraph, findDeviceUsage } from './tools/graph';
 export { graphHash, summarizeGraph, applyGraphPatch, patchGraph, validateGraphById } from './tools/graphEdit';
 export type { GraphCompactSummary, GraphNodeSummary, GraphPatch } from './tools/graphEdit';

@@ -1,0 +1,259 @@
+.backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    background: var(--ui-backdrop);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    animation: smFadeIn 0.15s ease;
+}
+
+.modal {
+    width: 100%;
+    max-width: 480px;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+    padding: 22px;
+    border-radius: var(--radius-lg);
+    background: var(--ui-surface);
+    border: 1px solid var(--ui-border);
+    box-shadow: var(--ui-shadow-drawer);
+    color: var(--ui-ink);
+    font-family: var(--font-sans);
+    letter-spacing: -0.011em;
+    animation: smModalIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--ui-ink);
+}
+
+.subtitle {
+    margin: 6px 0 0;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--ui-secondary);
+}
+
+.closeBtn {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    border: none;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--ui-secondary);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.closeBtn:hover {
+    background: var(--ui-subtle);
+    color: var(--ui-ink);
+}
+
+.form {
+    margin-top: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--ui-border);
+    background: var(--ui-subtle);
+}
+
+.sectionTitle {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--ui-secondary);
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.labelRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.label {
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--ui-ink);
+}
+
+.badge {
+    font-size: 11px;
+    color: var(--ui-signal);
+    font-weight: 500;
+}
+
+.clearLink {
+    border: none;
+    padding: 0;
+    background: transparent;
+    color: var(--ui-secondary);
+    font-size: 11.5px;
+    cursor: pointer;
+    transition: color 0.15s ease;
+}
+
+.clearLink:hover {
+    color: var(--ui-alert);
+}
+
+.input {
+    width: 100%;
+    height: 36px;
+    padding: 0 11px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--ui-border);
+    background: var(--ui-surface);
+    color: var(--ui-ink);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.input::placeholder {
+    color: var(--ui-muted);
+}
+
+.input:focus {
+    border-color: var(--ui-focus-border);
+}
+
+.inputRow {
+    display: grid;
+    grid-template-columns: 1fr 110px;
+    gap: 10px;
+}
+
+.hint {
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: var(--ui-muted);
+}
+
+.errorBox {
+    padding: 10px 12px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--ui-alert);
+    background: rgba(239, 68, 68, 0.08);
+    color: var(--ui-alert);
+    font-size: 12.5px;
+    line-height: 1.45;
+}
+
+.actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.cancelButton,
+.saveButton {
+    height: 35px;
+    padding: 0 15px;
+    border-radius: var(--radius-md);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+
+.cancelButton {
+    border: 1px solid var(--ui-border);
+    background: var(--ui-subtle);
+    color: var(--ui-ink);
+}
+
+.cancelButton:hover:not(:disabled) {
+    background: var(--ui-subtle-hover);
+    border-color: var(--ui-border-hover);
+}
+
+.saveButton {
+    border: none;
+    background: var(--ui-btn-primary);
+    color: var(--ui-btn-primary-text);
+}
+
+.saveButton:hover:not(:disabled) {
+    opacity: 0.9;
+}
+
+.cancelButton:disabled,
+.saveButton:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+@keyframes smFadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes smModalIn {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@media (max-width: 480px) {
+    .inputRow {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .backdrop,
+    .modal {
+        animation: none;
+    }
+}

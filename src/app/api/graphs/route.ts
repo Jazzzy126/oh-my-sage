@@ -8,9 +8,11 @@ import {getGateway, isGatewayConnected} from '@/server/gateway/shared';
 import {
     createGraph,
     deleteGraph,
+    getDeviceList,
     getDevices,
     getGraph,
     getGraphText,
+    scanGraphs,
     summarizeGraph,
     toggleGraph,
     updateGraph,
@@ -271,20 +273,56 @@ export async function GET(request: NextRequest) {
             });
         }
 
-        // 获取规则列表
-        const result = await gateway.callApi('getGraphList', {}, 10000);
+        // 通过增量缓存并发扫描规则节点与设备房间映射，组装每条规则的所属房间
+        const [scannedGraphs, devList] = await Promise.all([
+            scanGraphs(gateway),
+            getDeviceList(gateway).catch(() => ({} as Record<string, { roomName?: string }>)),
+        ]);
 
-        // 根据实际返回的数据结构，getGraphList 返回数组
-        // 每个元素包含: id, userData.name, userData.lastUpdateTime, enable, uiType
-        const graphList = Array.isArray(result) ? result : [];
+        const didRoomMap = new Map<string, string>();
+        const knownRooms = new Set<string>();
+        for (const [did, dev] of Object.entries(devList || {})) {
+            const room = dev.roomName?.trim();
+            if (room) {
+                didRoomMap.set(did, room);
+                knownRooms.add(room);
+            }
+        }
+        const sortedKnownRooms = Array.from(knownRooms).sort((a, b) => b.length - a.length);
 
-        // 转换为摘要格式
-        const graphSummaries = graphList.map((graph: any) => ({
-            id: graph.id,
-            name: graph.userData?.name || '未命名规则',
-            enable: graph.enable !== false,  // 注意是 enable 不是 enabled
-            lastUpdateTime: graph.userData?.lastUpdateTime,
-        }));
+        const graphSummaries = scannedGraphs.map(({summary, nodes}) => {
+            const name = summary.userData?.name || '未命名规则';
+            const roomSet = new Set<string>();
+
+            if (Array.isArray(nodes)) {
+                for (const node of nodes) {
+                    const did = (typeof node.cfg?.did === 'string' && node.cfg.did)
+                        || (typeof node.props?.did === 'string' && node.props.did)
+                        || '';
+                    if (!did) continue;
+                    const room = didRoomMap.get(did);
+                    if (room) roomSet.add(room);
+                }
+            }
+
+            // 若规则无设备节点（如纯定时/变量规则），按规则名称中的已知房间名辅助归类
+            if (roomSet.size === 0) {
+                for (const room of sortedKnownRooms) {
+                    if (name.includes(room)) {
+                        roomSet.add(room);
+                        break;
+                    }
+                }
+            }
+
+            return {
+                id: summary.id,
+                name,
+                enable: summary.enable !== false,
+                lastUpdateTime: summary.userData?.lastUpdateTime,
+                rooms: Array.from(roomSet),
+            };
+        });
 
         return NextResponse.json({
             success: true,

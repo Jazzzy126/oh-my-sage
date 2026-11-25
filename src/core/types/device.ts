@@ -109,7 +109,9 @@ export interface DeviceListResponse {
         model: string;
         modelName: string;
         online: boolean;
+        roomId?: string;
         roomName: string;
+        icon?: string;
         urn: string;
     }>;
 }

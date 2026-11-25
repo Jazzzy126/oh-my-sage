@@ -6,7 +6,7 @@
 import {NextRequest} from 'next/server';
 import {getGateway, isGatewayConnected} from '@/server/gateway/shared';
 import {Agent} from '@/server/agent/agent';
-import {getModelConfigFromEnv} from '@/server/ai/model';
+import {getSettingsStore} from '@/server/config/store';
 import {getSessionStore} from '@/server/session/store';
 
 export const runtime = 'nodejs';
@@ -34,25 +34,36 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // 使用已建立的连接
+        // 使用已建立的连接与服务端配置
         const gateway = getGateway()!;
-        const config = getModelConfigFromEnv();
+        const config = await getSettingsStore().getModelConfig();
+        if (!config.baseURL || !config.apiKey || !config.model) {
+            return new Response(
+                JSON.stringify({error: '请先在左下角「设置 → 模型与网关配置」中完成 AI 模型配置'}),
+                {status: 400, headers: {'Content-Type': 'application/json'}}
+            );
+        }
         const agent = new Agent(gateway, config);
 
-        // 如果有 sessionId，加载历史
+        // 如果有 sessionId，加载历史；否则新建会话并在 SSE 首包下发给前端
+        let createdSessionId: string | undefined;
         if (sessionId) {
             await agent.loadSession(sessionId);
         } else {
-            // 如果没有 sessionId，创建一个新的
             const store = getSessionStore();
             const newSession = await store.createSession();
             agent.setSession(newSession.id);
+            createdSessionId = newSession.id;
         }
 
         const encoder = new TextEncoder();
         const stream = new ReadableStream({
             async start(controller) {
                 try {
+                    if (createdSessionId) {
+                        const sessionEvent = JSON.stringify({type: 'session', sessionId: createdSessionId});
+                        controller.enqueue(encoder.encode(`data: ${sessionEvent}\n\n`));
+                    }
                     for await (const output of agent.run(message)) {
                         const data = JSON.stringify(output);
                         controller.enqueue(encoder.encode(`data: ${data}\n\n`));

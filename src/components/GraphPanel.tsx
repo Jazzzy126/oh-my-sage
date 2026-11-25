@@ -13,6 +13,7 @@ interface GraphSummary {
     name: string;
     enable: boolean;
     lastUpdateTime?: number;
+    rooms?: string[];
 }
 
 interface RuleNodeItem {
@@ -69,6 +70,7 @@ export default function GraphPanel({
 }: GraphPanelProps) {
     const [searchText, setSearchText] = useState('');
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+    const [activeRoomTab, setActiveRoomTab] = useState<string>('all');
     const [selectedSummary, setSelectedSummary] = useState<GraphSummary | null>(null);
     const [detail, setDetail] = useState<GraphDetail | null>(null);
     const [detailLoading, setDetailLoading] = useState(false);
@@ -80,25 +82,95 @@ export default function GraphPanel({
     const enabledCount = graphs.filter(g => g.enable).length;
     const disabledCount = graphs.length - enabledCount;
     const showInitialLoading = loading && graphs.length === 0;
-    const hasFilter = searchText.trim().length > 0 || statusFilter !== 'all';
+    const hasFilter = searchText.trim().length > 0 || statusFilter !== 'all' || activeRoomTab !== 'all';
 
-    // 过滤并按「启用优先 → 最近更新优先」排序
-    const visibleGraphs = useMemo(() => {
+    // 按当前状态与搜索词先过滤，用于动态计算各房间 Tab 的匹配数
+    const baseFilteredGraphs = useMemo(() => {
         const keyword = searchText.trim().toLowerCase();
-        return graphs
+        return graphs.filter(g => {
+            if (statusFilter === 'enabled' && !g.enable) return false;
+            if (statusFilter === 'disabled' && g.enable) return false;
+            if (keyword) {
+                const rooms = g.rooms || [];
+                const hitName = g.name.toLowerCase().includes(keyword);
+                const hitId = g.id.includes(keyword);
+                const hitRoom = rooms.some(r => r.toLowerCase().includes(keyword));
+                if (!hitName && !hitId && !hitRoom) return false;
+            }
+            return true;
+        });
+    }, [graphs, searchText, statusFilter]);
+
+    // 生成房间 Tab 列表（按总规则数构建稳定 Tab 顺序，计数随状态/搜索同步更新）
+    const roomTabs = useMemo(() => {
+        const allCategories = new Map<string, number>();
+        for (const g of graphs) {
+            const rooms = g.rooms || [];
+            const key = rooms.length === 1
+                ? rooms[0]
+                : rooms.length > 1
+                    ? '__cross__'
+                    : '__global__';
+            allCategories.set(key, (allCategories.get(key) || 0) + 1);
+        }
+
+        const filteredCounts = new Map<string, number>();
+        for (const g of baseFilteredGraphs) {
+            const rooms = g.rooms || [];
+            const key = rooms.length === 1
+                ? rooms[0]
+                : rooms.length > 1
+                    ? '__cross__'
+                    : '__global__';
+            filteredCounts.set(key, (filteredCounts.get(key) || 0) + 1);
+        }
+
+        const specialOrder = new Map<string, number>([
+            ['__cross__', 1],
+            ['__global__', 2],
+        ]);
+
+        const sortedCategories = Array.from(allCategories.entries())
+            .sort(([kA, cA], [kB, cB]) => {
+                const rA = specialOrder.get(kA) ?? 0;
+                const rB = specialOrder.get(kB) ?? 0;
+                if (rA !== rB) return rA - rB;
+                return cB - cA || kA.localeCompare(kB, 'zh-CN');
+            })
+            .map(([key]) => ({
+                key,
+                label: key === '__cross__' ? '跨房间联动' : key === '__global__' ? '全局规则' : key,
+                count: filteredCounts.get(key) || 0,
+            }));
+
+        return [
+            {key: 'all', label: '全部', count: baseFilteredGraphs.length},
+            ...sortedCategories,
+        ];
+    }, [graphs, baseFilteredGraphs]);
+
+    // 若当前选中的房间 Tab 在数据刷新后已不存在，自动回退到「全部」
+    useEffect(() => {
+        if (activeRoomTab !== 'all' && !roomTabs.some(t => t.key === activeRoomTab)) {
+            setActiveRoomTab('all');
+        }
+    }, [activeRoomTab, roomTabs]);
+
+    // 当前 Tab 下展示的规则（启用优先 → 最近更新优先）
+    const visibleGraphs = useMemo(() => {
+        return baseFilteredGraphs
             .filter(g => {
-                if (statusFilter === 'enabled' && !g.enable) return false;
-                if (statusFilter === 'disabled' && g.enable) return false;
-                if (keyword && !g.name.toLowerCase().includes(keyword) && !g.id.includes(keyword)) {
-                    return false;
-                }
-                return true;
+                if (activeRoomTab === 'all') return true;
+                const rooms = g.rooms || [];
+                if (activeRoomTab === '__cross__') return rooms.length > 1;
+                if (activeRoomTab === '__global__') return rooms.length === 0;
+                return rooms.length === 1 && rooms[0] === activeRoomTab;
             })
             .sort((a, b) => {
                 if (a.enable !== b.enable) return a.enable ? -1 : 1;
                 return (b.lastUpdateTime || 0) - (a.lastUpdateTime || 0);
             });
-    }, [graphs, searchText, statusFilter]);
+    }, [baseFilteredGraphs, activeRoomTab]);
 
     // 同步当前选中规则的启停状态
     const liveSelected = selectedSummary
@@ -207,6 +279,9 @@ export default function GraphPanel({
                                 </div>
                                 <div className={styles.modalMeta}>
                                     <span>{formatTime(detail?.lastUpdateTime ?? liveSelected.lastUpdateTime)}</span>
+                                    {liveSelected.rooms && liveSelected.rooms.length > 0 && (
+                                        <span>房间: {liveSelected.rooms.join('、')}</span>
+                                    )}
                                     {detail && <span>共 {detail.nodeCount} 个节点</span>}
                                     <span>ID: {liveSelected.id}</span>
                                 </div>
@@ -414,7 +489,7 @@ export default function GraphPanel({
                     <input
                         type="text"
                         className={styles.searchInput}
-                        placeholder="搜索规则名称或 ID"
+                        placeholder="搜索规则名称、房间或 ID"
                         value={searchText}
                         onChange={(e) => setSearchText(e.target.value)}
                         aria-label="搜索自动化规则"
@@ -431,6 +506,29 @@ export default function GraphPanel({
                     )}
                 </div>
             </div>
+
+            {roomTabs.length > 1 && (
+                <div className={styles.roomTabsWrap}>
+                    <div className={styles.roomTabs} role="tablist" aria-label="按房间分类查看规则">
+                        {roomTabs.map(tab => {
+                            const isActive = activeRoomTab === tab.key;
+                            return (
+                                <button
+                                    key={tab.key}
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={isActive}
+                                    className={`${styles.roomTab} ${isActive ? styles.roomTabActive : ''}`}
+                                    onClick={() => setActiveRoomTab(tab.key)}
+                                >
+                                    <span>{tab.label}</span>
+                                    <span className={styles.roomTabCount}>{tab.count}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
 
             <div className={styles.list}>
                 {showInitialLoading ? (
@@ -449,7 +547,7 @@ export default function GraphPanel({
                         </p>
                         <p className={styles.emptyDesc}>
                             {hasFilter
-                                ? '尝试更换关键词或切换启用状态筛选。'
+                                ? '尝试更换关键词、房间分类或切换启用状态筛选。'
                                 : '切换到「对话」视图，用自然语言描述你想实现的智能家居联动，助手会自动为你生成并部署到中枢网关。'}
                         </p>
                         {hasFilter && (
@@ -459,6 +557,7 @@ export default function GraphPanel({
                                 onClick={() => {
                                     setSearchText('');
                                     setStatusFilter('all');
+                                    setActiveRoomTab('all');
                                 }}
                             >
                                 清除筛选
@@ -469,6 +568,10 @@ export default function GraphPanel({
                     <div className={styles.grid}>
                         {visibleGraphs.map(graph => {
                             const isSelected = liveSelected?.id === graph.id;
+                            const showRoomTags =
+                                (activeRoomTab === 'all' || activeRoomTab === '__cross__') &&
+                                graph.rooms &&
+                                graph.rooms.length > 0;
                             return (
                                 <div
                                     key={graph.id}
@@ -511,6 +614,14 @@ export default function GraphPanel({
                                             <span className={styles.switchThumb}/>
                                         </button>
                                     </div>
+
+                                    {showRoomTags && (
+                                        <div className={styles.itemRooms}>
+                                            {graph.rooms!.map(room => (
+                                                <span key={room} className={styles.roomTag}>{room}</span>
+                                            ))}
+                                        </div>
+                                    )}
 
                                     <div className={styles.itemBottom}>
                                         <span className={styles.itemTime}>{formatTime(graph.lastUpdateTime)}</span>

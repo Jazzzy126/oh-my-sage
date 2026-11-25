@@ -2,25 +2,29 @@
 
 import React, {useState, useRef, useEffect, useCallback, useMemo} from 'react';
 import {message} from 'antd';
+import {Bubble, Prompts, XStream} from '@ant-design/x';
+import type {BubbleListProps, BubbleDataType} from '@ant-design/x/es/bubble/BubbleList';
+import type {PromptProps} from '@ant-design/x';
 import {
     ApartmentOutlined,
-    AppstoreOutlined,
-    ArrowUpOutlined,
     BulbOutlined,
     CheckOutlined,
     CopyOutlined,
     DownOutlined,
-    RightOutlined,
+    EditOutlined,
+    ReloadOutlined,
     RollbackOutlined,
-    SearchOutlined,
     ThunderboltOutlined,
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import ChatProcessChain, {type ToolCallItem} from './ChatProcessChain';
+import ChatComposer, {type MentionDevice, type MentionGraph} from './ChatComposer';
 import styles from './Chat.module.css';
 
 interface AgentOutput {
-    type: 'thinking' | 'tool_start' | 'tool_result' | 'complete' | 'waiting_input' | 'error';
+    type: 'session' | 'thinking' | 'tool_start' | 'tool_result' | 'complete' | 'waiting_input' | 'error';
+    sessionId?: string;
     content?: string;
     tool?: string;
     args?: any;
@@ -29,13 +33,6 @@ interface AgentOutput {
     options?: string[];
     error?: string;
     message?: string;
-}
-
-interface ToolCallItem {
-    tool: string;
-    args?: any;
-    result?: any;
-    success: boolean;
 }
 
 interface ChatMessage {
@@ -58,31 +55,6 @@ interface SessionMessage {
     toolCalls?: ToolCallItem[];
 }
 
-interface MentionDevice {
-    did: string;
-    name: string;
-    model?: string;
-    online: boolean;
-    roomName?: string;
-}
-
-interface MentionGraph {
-    id: string;
-    name: string;
-    enable: boolean;
-}
-
-type MentionTab = 'all' | 'device' | 'graph';
-
-interface MentionOption {
-    key: string;
-    kind: 'device' | 'graph';
-    title: string;
-    meta: string;
-    active: boolean;
-    insertText: string;
-}
-
 interface ChatProps {
     passcode?: string;
     sessionId?: string;
@@ -97,30 +69,25 @@ interface ChatProps {
     onGraphsMutated?: () => void;
 }
 
-const MENTION_TRIGGER_RE = /(?:^|[\s，。！？、；：（(\[])(@([^\s@]*))$/;
-
 const GRAPH_WRITE_TOOL_RE = /(create|update|patch|put|delete|toggle)_?graph/i;
 
-const STARTER_PROMPTS = [
+const STARTER_PROMPTS: Array<PromptProps & { prompt: string }> = [
     {
         key: 'devices',
-        tone: 'warm' as const,
-        label: '查看当前设备状态',
-        hint: '列出在线设备与房间分布，确认可联动能力',
+        icon: <BulbOutlined style={{color: 'var(--ui-warm)'}}/>,
+        label: '查看设备状态',
         prompt: '帮我查看设备状态',
     },
     {
         key: 'create',
-        tone: 'signal' as const,
-        label: '创建一条自动化规则',
-        hint: '用自然语言描述触发条件与设备动作，自动生成规则',
+        icon: <ThunderboltOutlined style={{color: 'var(--ui-signal)'}}/>,
+        label: '创建自动化规则',
         prompt: '帮我创建自动化规则',
     },
     {
         key: 'rules',
-        tone: 'info' as const,
-        label: '检查现有自动化规则',
-        hint: '查看中枢网关中已有的规则及启用情况',
+        icon: <ApartmentOutlined style={{color: 'var(--ui-info)'}}/>,
+        label: '查看现有规则',
         prompt: '帮我查看当前的自动化规则列表',
     },
 ];
@@ -170,6 +137,20 @@ const MARKDOWN_COMPONENTS = {
     pre: CopyablePre,
 };
 
+/**
+ * 记忆化 Markdown 渲染组件，仅在 content 变化时重新解析 AST。
+ */
+const AssistantMarkdown = React.memo(function AssistantMarkdown({content}: { content: string }) {
+    if (!content) return null;
+    return (
+        <div className={`${styles.assistantProse} markdown-content`}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
+                {content}
+            </ReactMarkdown>
+        </div>
+    );
+});
+
 function AssistantMark() {
     return (
         <span className={styles.assistantAvatar} aria-hidden="true">
@@ -195,35 +176,39 @@ export default function Chat({
     onGraphsMutated,
 }: ChatProps = {}) {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
-    const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [waitingInput, setWaitingInput] = useState<{ question: string; options: string[] } | null>(null);
     const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(sessionId);
     const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
     const [showScrollBottom, setShowScrollBottom] = useState(false);
-
-    // @ 引用弹窗状态：button 模式由左侧按钮触发，inline 模式由输入 @ 触发
-    const [mentionMode, setMentionMode] = useState<'closed' | 'button' | 'inline'>('closed');
-    const [mentionTab, setMentionTab] = useState<MentionTab>('all');
-    const [mentionQuery, setMentionQuery] = useState('');
-    const [mentionRange, setMentionRange] = useState<{ start: number; end: number } | null>(null);
-    const [mentionIndex, setMentionIndex] = useState(0);
+    const [resetDraft, setResetDraft] = useState<{ text: string; seq: number } | null>(null);
+    const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
+    const [editingText, setEditingText] = useState('');
 
     const [streamThinking, setStreamThinking] = useState('');
     const [streamToolCalls, setStreamToolCalls] = useState<ToolCallItem[]>([]);
     const [streamFinalContent, setStreamFinalContent] = useState('');
 
     const messagesContainerRef = useRef<HTMLDivElement>(null);
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const composerRef = useRef<HTMLDivElement>(null);
-    const mentionSearchRef = useRef<HTMLInputElement>(null);
-    const mentionListRef = useRef<HTMLDivElement>(null);
-    const savedCursorRef = useRef<number | null>(null);
-    const abortControllerRef = useRef<AbortController | null>(null);
     const isNearBottomRef = useRef(true);
+    const abortControllerRef = useRef<AbortController | null>(null);
+    const rafIdRef = useRef<number | null>(null);
+    const draftSeqRef = useRef(0);
     const passcode = propPasscode || '';
     const prevSessionIdRef = useRef<string | undefined>(sessionId);
-    const initializedRef = useRef(false);
+    const prevInitialMessagesRef = useRef<SessionMessage[] | undefined>(undefined);
+    const skipInitialSyncRef = useRef(false);
+
+    const cancelPendingRaf = useCallback(() => {
+        if (rafIdRef.current !== null) {
+            cancelAnimationFrame(rafIdRef.current);
+            rafIdRef.current = null;
+        }
+    }, []);
+
+    useEffect(() => {
+        return () => cancelPendingRaf();
+    }, [cancelPendingRaf]);
 
     useEffect(() => {
         if (sessionId !== prevSessionIdRef.current) {
@@ -231,6 +216,7 @@ export default function Chat({
                 abortControllerRef.current.abort();
                 abortControllerRef.current = null;
             }
+            cancelPendingRaf();
             setStreamThinking('');
             setStreamToolCalls([]);
             setStreamFinalContent('');
@@ -238,12 +224,19 @@ export default function Chat({
             setIsLoading(false);
             setCurrentSessionId(sessionId);
             prevSessionIdRef.current = sessionId;
-            initializedRef.current = false;
+            prevInitialMessagesRef.current = undefined;
         }
-    }, [sessionId]);
+    }, [sessionId, cancelPendingRaf]);
 
     useEffect(() => {
-        if (initializedRef.current) return;
+        if (initialMessages === prevInitialMessagesRef.current) return;
+        prevInitialMessagesRef.current = initialMessages;
+
+        if (skipInitialSyncRef.current) {
+            skipInitialSyncRef.current = false;
+            return;
+        }
+        if (isLoading) return;
 
         if (initialMessages && initialMessages.length > 0) {
             const visibleMessages = initialMessages.filter(
@@ -265,245 +258,90 @@ export default function Chat({
                 } : undefined,
             }));
             setMessages(convertedMessages);
-            initializedRef.current = true;
-        } else if (initialMessages && initialMessages.length === 0 && !isLoading) {
+
+            // 若会话最后一条是未回复的 ask_user 工具调用，恢复待确认选项卡片
+            const lastVisible = visibleMessages[visibleMessages.length - 1];
+            const askUserCall = lastVisible?.role === 'assistant'
+                ? [...(lastVisible.toolCalls || [])].reverse().find(tc => tc.tool === 'ask_user')
+                : undefined;
+            const askArgs = askUserCall?.args as { question?: string; options?: unknown } | undefined;
+            const askOptions = Array.isArray(askArgs?.options)
+                ? askArgs.options.filter((opt): opt is string => typeof opt === 'string' && opt.length > 0)
+                : [];
+            if (askUserCall && (askOptions.length > 0 || askArgs?.question)) {
+                setWaitingInput({
+                    question: askArgs?.question || '请选择',
+                    options: askOptions,
+                });
+            } else {
+                setWaitingInput(null);
+            }
+        } else if (initialMessages && initialMessages.length === 0) {
             setMessages([]);
-            initializedRef.current = true;
+            setWaitingInput(null);
         }
     }, [initialMessages, isLoading]);
 
-    // 仅在用户接近底部时自动跟随滚动，避免向上翻看历史时被抢滚动条
+    // 仅在用户接近底部时自动跟随滚动，避免向上翻看长消息时被抢滚动条
     useEffect(() => {
         const el = messagesContainerRef.current;
-        if (!el) return;
-        if (isNearBottomRef.current) {
-            el.scrollTop = el.scrollHeight;
-        }
+        if (!el || !isNearBottomRef.current) return;
+        el.scrollTop = el.scrollHeight;
     }, [messages, streamThinking, streamToolCalls, streamFinalContent, waitingInput]);
 
-    // 接收来自设备/规则面板的快捷引用文本并聚焦输入框
-    useEffect(() => {
-        if (!draftInsert?.text) return;
-        setInput(prev => {
-            if (!prev.trim()) return draftInsert.text;
-            const sep = prev.endsWith(' ') || prev.endsWith('\n') ? '' : ' ';
-            return `${prev}${sep}${draftInsert.text}`;
-        });
-        requestAnimationFrame(() => {
-            const el = textareaRef.current;
-            if (el) {
-                el.focus();
-                el.selectionStart = el.selectionEnd = el.value.length;
-            }
-        });
-    }, [draftInsert]);
-
-    const handleMessagesScroll = () => {
+    const handleMessagesScroll = useCallback(() => {
         const el = messagesContainerRef.current;
         if (!el) return;
         const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
         const nearBottom = distanceToBottom < 80;
         isNearBottomRef.current = nearBottom;
-        setShowScrollBottom(!nearBottom && el.scrollHeight > el.clientHeight + 120);
-    };
+        const nextShow = !nearBottom && el.scrollHeight > el.clientHeight + 120;
+        setShowScrollBottom(prev => (prev === nextShow ? prev : nextShow));
+    }, []);
 
-    const scrollToBottom = () => {
+    const scrollToBottom = useCallback(() => {
         const el = messagesContainerRef.current;
         if (!el) return;
         isNearBottomRef.current = true;
         setShowScrollBottom(false);
         el.scrollTo({top: el.scrollHeight, behavior: 'smooth'});
-    };
-
-    // 自动调整输入框高度
-    useEffect(() => {
-        const el = textareaRef.current;
-        if (!el) return;
-        el.style.height = 'auto';
-        el.style.height = `${Math.min(el.scrollHeight, 132)}px`;
-    }, [input]);
-
-    const mentionOpen = mentionMode !== 'closed';
-
-    const closeMention = useCallback(() => {
-        setMentionMode('closed');
-        setMentionQuery('');
-        setMentionRange(null);
-        setMentionIndex(0);
     }, []);
 
-    // 点击输入区外部时关闭 @ 引用弹窗
-    useEffect(() => {
-        if (!mentionOpen) return;
-        const onPointerDown = (e: MouseEvent) => {
-            if (composerRef.current && !composerRef.current.contains(e.target as Node)) {
-                closeMention();
-            }
-        };
-        document.addEventListener('mousedown', onPointerDown);
-        return () => document.removeEventListener('mousedown', onPointerDown);
-    }, [mentionOpen, closeMention]);
-
-    // 通过按钮打开时自动聚焦弹窗搜索框
-    useEffect(() => {
-        if (mentionMode === 'button') {
-            requestAnimationFrame(() => mentionSearchRef.current?.focus());
+    const handleCopyMessage = useCallback(async (msgId: string, content: string) => {
+        try {
+            await navigator.clipboard.writeText(content);
+            setCopiedMsgId(msgId);
+            setTimeout(() => {
+                setCopiedMsgId(prev => (prev === msgId ? null : prev));
+            }, 1600);
+        } catch {
+            // 忽略剪贴板权限受限
         }
-    }, [mentionMode]);
+    }, []);
 
-    // 合并并筛选可引用的设备与自动化规则
-    const mentionOptions = useMemo<MentionOption[]>(() => {
-        const kw = mentionQuery.trim().toLowerCase();
-        const items: MentionOption[] = [];
-
-        if (mentionTab === 'all' || mentionTab === 'device') {
-            for (const dev of devices) {
-                const room = dev.roomName || '未分组';
-                if (kw) {
-                    const hitName = dev.name.toLowerCase().includes(kw);
-                    const hitRoom = room.toLowerCase().includes(kw);
-                    const hitModel = (dev.model || '').toLowerCase().includes(kw);
-                    if (!hitName && !hitRoom && !hitModel) continue;
-                }
-                items.push({
-                    key: `device:${dev.did}`,
-                    kind: 'device',
-                    title: dev.name,
-                    meta: `${room} · ${dev.online ? '在线' : '离线'}`,
-                    active: dev.online,
-                    insertText: `「${dev.name}」`,
-                });
-            }
+    const handleStop = useCallback(() => {
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+            abortControllerRef.current = null;
         }
+        cancelPendingRaf();
+        setIsLoading(false);
+        setStreamThinking('');
+        setStreamToolCalls([]);
+        setStreamFinalContent('');
+        setWaitingInput(null);
+    }, [cancelPendingRaf]);
 
-        if (mentionTab === 'all' || mentionTab === 'graph') {
-            for (const g of graphs) {
-                if (kw && !g.name.toLowerCase().includes(kw) && !g.id.toLowerCase().includes(kw)) {
-                    continue;
-                }
-                items.push({
-                    key: `graph:${g.id}`,
-                    kind: 'graph',
-                    title: g.name,
-                    meta: `自动化规则 · ${g.enable ? '已启用' : '已停用'}`,
-                    active: g.enable,
-                    insertText: `「${g.name}」（规则 ID: ${g.id}）`,
-                });
-            }
+    const handleReset = useCallback(async (targetSeq: number, messageContent: string) => {
+        if (!currentSessionId || !onResetSession) return;
+        handleStop();
+        try {
+            await onResetSession(currentSessionId, targetSeq - 1);
+            setResetDraft({text: messageContent, seq: ++draftSeqRef.current});
+        } catch {
+            // 错误提示已在外层处理
         }
-
-        return items;
-    }, [devices, graphs, mentionQuery, mentionTab]);
-
-    useEffect(() => {
-        setMentionIndex(0);
-    }, [mentionQuery, mentionTab, mentionMode]);
-
-    useEffect(() => {
-        if (!mentionOpen) return;
-        const container = mentionListRef.current;
-        const activeEl = container?.querySelector<HTMLElement>(`[data-mention-index="${mentionIndex}"]`);
-        activeEl?.scrollIntoView({block: 'nearest'});
-    }, [mentionIndex, mentionOpen]);
-
-    const handleSelectMention = useCallback((option: MentionOption) => {
-        const textToInsert = `${option.insertText} `;
-        let nextCursor = 0;
-
-        if (mentionMode === 'inline' && mentionRange) {
-            setInput(prev => {
-                const before = prev.slice(0, mentionRange.start);
-                const after = prev.slice(mentionRange.end);
-                nextCursor = before.length + textToInsert.length;
-                return `${before}${textToInsert}${after}`;
-            });
-        } else {
-            setInput(prev => {
-                const pos = savedCursorRef.current !== null
-                    ? Math.min(savedCursorRef.current, prev.length)
-                    : prev.length;
-                const before = prev.slice(0, pos);
-                const after = prev.slice(pos);
-                const prefix = before && !/[\s，。！？、；：（(\[]$/.test(before) ? ' ' : '';
-                const inserted = `${prefix}${textToInsert}`;
-                nextCursor = before.length + inserted.length;
-                return `${before}${inserted}${after}`;
-            });
-        }
-
-        closeMention();
-        requestAnimationFrame(() => {
-            const el = textareaRef.current;
-            if (el) {
-                el.focus();
-                el.selectionStart = el.selectionEnd = nextCursor;
-            }
-        });
-    }, [mentionMode, mentionRange, closeMention]);
-
-    const handleToggleMentionButton = () => {
-        if (mentionMode === 'button') {
-            closeMention();
-            textareaRef.current?.focus();
-            return;
-        }
-        savedCursorRef.current = textareaRef.current?.selectionStart ?? input.length;
-        setMentionTab('all');
-        setMentionQuery('');
-        setMentionRange(null);
-        setMentionMode('button');
-        onEnsureGraphsLoaded?.();
-    };
-
-    const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-        const value = e.target.value;
-        const cursor = e.target.selectionStart ?? value.length;
-        setInput(value);
-
-        const beforeCursor = value.slice(0, cursor);
-        const match = MENTION_TRIGGER_RE.exec(beforeCursor);
-        if (match) {
-            const token = match[1];
-            const query = match[2];
-            setMentionRange({start: cursor - token.length, end: cursor});
-            setMentionQuery(query);
-            if (mentionMode !== 'inline') {
-                setMentionTab('all');
-                setMentionMode('inline');
-                onEnsureGraphsLoaded?.();
-            }
-        } else if (mentionMode === 'inline') {
-            closeMention();
-        }
-    };
-
-    const handleMentionNavigationKey = (e: React.KeyboardEvent): boolean => {
-        if (!mentionOpen) return false;
-        if (e.key === 'Escape') {
-            e.preventDefault();
-            closeMention();
-            textareaRef.current?.focus();
-            return true;
-        }
-        if (mentionOptions.length === 0) return false;
-        if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            setMentionIndex(prev => (prev + 1) % mentionOptions.length);
-            return true;
-        }
-        if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            setMentionIndex(prev => (prev - 1 + mentionOptions.length) % mentionOptions.length);
-            return true;
-        }
-        if ((e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey) {
-            if (e.nativeEvent instanceof KeyboardEvent && e.nativeEvent.isComposing) return false;
-            e.preventDefault();
-            handleSelectMention(mentionOptions[mentionIndex] || mentionOptions[0]);
-            return true;
-        }
-        return false;
-    };
+    }, [currentSessionId, onResetSession, handleStop]);
 
     const sendMessage = useCallback(async (messageText: string) => {
         if (!messageText.trim() || isLoading) return;
@@ -513,8 +351,10 @@ export default function Chat({
             role: 'user',
             content: messageText,
         };
-        setMessages(prev => [...prev, userMessage]);
-        setInput('');
+        setMessages(prev => {
+            const nextSeq = prev.length === 0 ? 0 : (prev[prev.length - 1].seq ?? prev.length - 1) + 1;
+            return [...prev, {...userMessage, seq: nextSeq}];
+        });
         setIsLoading(true);
         setWaitingInput(null);
         isNearBottomRef.current = true;
@@ -523,9 +363,21 @@ export default function Chat({
         let currentThinking = '';
         const currentToolCalls: ToolCallItem[] = [];
         let finalContent = '';
+        let resolvedSessionId = currentSessionId;
         setStreamThinking('');
         setStreamToolCalls([]);
         setStreamFinalContent('');
+
+        const flushThinking = () => {
+            rafIdRef.current = null;
+            setStreamThinking(currentThinking);
+        };
+
+        const scheduleThinkingFlush = () => {
+            if (rafIdRef.current === null) {
+                rafIdRef.current = requestAnimationFrame(flushThinking);
+            }
+        };
 
         const abortController = new AbortController();
         abortControllerRef.current = abortController;
@@ -538,95 +390,96 @@ export default function Chat({
                 signal: abortController.signal,
             });
 
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
-            const reader = response.body?.getReader();
-            if (!reader) throw new Error('无法读取响应流');
-
-            const decoder = new TextDecoder();
-
-            while (true) {
-                if (abortController.signal.aborted) {
-                    reader.cancel();
-                    break;
+            if (!response.ok) {
+                let errorDetail = `HTTP error! status: ${response.status}`;
+                try {
+                    const errBody = await response.json();
+                    if (errBody?.error) errorDetail = errBody.error;
+                } catch {
+                    // ignore non-json error body
                 }
-                const {done, value} = await reader.read();
-                if (done) break;
+                throw new Error(errorDetail);
+            }
+            if (!response.body) throw new Error('无法读取响应流');
 
-                const chunk = decoder.decode(value);
-                const lines = chunk.split('\n');
+            // 使用 @ant-design/x XStream 完整解析跨 chunk 的 SSE 事件
+            for await (const sse of XStream({readableStream: response.body})) {
+                if (abortController.signal.aborted) break;
+                const rawData = typeof sse.data === 'string' ? sse.data.trim() : '';
+                if (!rawData || rawData === '[DONE]') continue;
 
-                for (const line of lines) {
-                    if (!line.startsWith('data: ')) continue;
-                    const data = line.slice(6);
-                    if (data === '[DONE]') continue;
-                    try {
-                        const output: AgentOutput = JSON.parse(data);
-                        switch (output.type) {
-                            case 'thinking':
-                                currentThinking += output.content || '';
-                                setStreamThinking(currentThinking);
-                                break;
-                            case 'tool_start':
-                                currentToolCalls.push({tool: output.tool || '', args: output.args, success: false});
+                try {
+                    const output: AgentOutput = JSON.parse(rawData);
+                    switch (output.type) {
+                        case 'session':
+                            if (output.sessionId) {
+                                resolvedSessionId = output.sessionId;
+                                setCurrentSessionId(output.sessionId);
+                            }
+                            break;
+                        case 'thinking':
+                            currentThinking += output.content || '';
+                            scheduleThinkingFlush();
+                            break;
+                        case 'tool_start':
+                            cancelPendingRaf();
+                            setStreamThinking(currentThinking);
+                            currentToolCalls.push({tool: output.tool || '', args: output.args, success: false});
+                            setStreamToolCalls([...currentToolCalls]);
+                            break;
+                        case 'tool_result': {
+                            const lastIndex = currentToolCalls.length - 1;
+                            if (lastIndex >= 0) {
+                                currentToolCalls[lastIndex].success = output.result?.success !== false;
+                                currentToolCalls[lastIndex].result = output.result;
                                 setStreamToolCalls([...currentToolCalls]);
-                                break;
-                            case 'tool_result': {
-                                const lastIndex = currentToolCalls.length - 1;
-                                if (lastIndex >= 0) {
-                                    currentToolCalls[lastIndex].success = output.result?.success !== false;
-                                    currentToolCalls[lastIndex].result = output.result;
-                                    setStreamToolCalls([...currentToolCalls]);
-                                }
-                                break;
                             }
-                            case 'complete':
-                                finalContent = output.message || output.content || '';
-                                setStreamFinalContent(finalContent);
-                                break;
-                            case 'waiting_input': {
-                                const opts = Array.isArray(output.options) ? output.options : [];
-                                if (opts.length > 0) {
-                                    setWaitingInput({question: output.question || '请选择', options: opts});
-                                }
-                                break;
+                            break;
+                        }
+                        case 'complete':
+                            cancelPendingRaf();
+                            setStreamThinking(currentThinking);
+                            finalContent = output.message || output.content || '';
+                            setStreamFinalContent(finalContent);
+                            break;
+                        case 'waiting_input': {
+                            const opts = Array.isArray(output.options) ? output.options : [];
+                            if (opts.length > 0) {
+                                setWaitingInput({question: output.question || '请选择', options: opts});
                             }
-                            case 'error':
-                                message.error(output.error || '发生错误');
-                                break;
+                            break;
                         }
-                    } catch (parseError) {
-                        if (data.length > 2) {
-                            console.warn('流式数据解析失败:', data, parseError);
-                        }
+                        case 'error':
+                            message.error(output.error || '发生错误');
+                            break;
+                    }
+                } catch (parseError) {
+                    if (rawData.length > 2) {
+                        console.warn('流式数据解析失败:', rawData, parseError);
                     }
                 }
             }
 
+            cancelPendingRaf();
             if (abortController.signal.aborted) return;
 
-            if (!currentSessionId) {
-                const sessionsResponse = await fetch('/api/sessions');
-                const sessionsData = await sessionsResponse.json();
-                if (sessionsData.success && sessionsData.sessions.length > 0) {
-                    const newSessionId = sessionsData.sessions[0].id;
-                    setCurrentSessionId(newSessionId);
-                    const assistantSessionMessage: SessionMessage = {
-                        seq: 1,
-                        role: 'assistant',
-                        content: finalContent,
-                        timestamp: new Date().toISOString(),
-                        thinking: currentThinking || undefined,
-                        toolCalls: currentToolCalls.length > 0 ? currentToolCalls : undefined,
-                    };
-                    const userSessionMessage: SessionMessage = {
-                        seq: 0,
-                        role: 'user',
-                        content: messageText,
-                        timestamp: new Date().toISOString(),
-                    };
-                    onSessionCreated?.(newSessionId, [userSessionMessage, assistantSessionMessage]);
-                }
+            if (!currentSessionId && resolvedSessionId) {
+                const assistantSessionMessage: SessionMessage = {
+                    seq: 1,
+                    role: 'assistant',
+                    content: finalContent,
+                    timestamp: new Date().toISOString(),
+                    thinking: currentThinking || undefined,
+                    toolCalls: currentToolCalls.length > 0 ? currentToolCalls : undefined,
+                };
+                const userSessionMessage: SessionMessage = {
+                    seq: 0,
+                    role: 'user',
+                    content: messageText,
+                    timestamp: new Date().toISOString(),
+                };
+                skipInitialSyncRef.current = true;
+                onSessionCreated?.(resolvedSessionId, [userSessionMessage, assistantSessionMessage]);
             }
 
             const assistantMessage: ChatMessage = {
@@ -638,464 +491,332 @@ export default function Chat({
                     thinking: currentThinking,
                 } : undefined,
             };
-            setMessages(prev => [...prev, assistantMessage]);
+            setMessages(prev => {
+                const nextSeq = prev.length === 0 ? 1 : (prev[prev.length - 1].seq ?? prev.length - 1) + 1;
+                return [...prev, {...assistantMessage, seq: nextSeq}];
+            });
             setStreamThinking('');
             setStreamToolCalls([]);
             setStreamFinalContent('');
 
-            // 若本轮调用了规则写操作工具，通知外层自动刷新规则列表
             if (currentToolCalls.some(tc => tc.success && GRAPH_WRITE_TOOL_RE.test(tc.tool))) {
                 onGraphsMutated?.();
             }
         } catch (error: any) {
+            cancelPendingRaf();
             if (error.name === 'AbortError') return;
-            setInput(messageText);
+            setResetDraft({text: messageText, seq: ++draftSeqRef.current});
             setMessages(prev => prev.filter(m => m.id !== userMessage.id));
             message.error('发送失败: ' + error.message);
         } finally {
             abortControllerRef.current = null;
             setIsLoading(false);
         }
-    }, [isLoading, passcode, currentSessionId, onSessionCreated, onGraphsMutated]);
+    }, [isLoading, passcode, currentSessionId, onSessionCreated, onGraphsMutated, cancelPendingRaf]);
 
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!input.trim()) return;
-        if (waitingInput) setWaitingInput(null);
-        sendMessage(input);
-    };
-
-    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-        if (mentionMode === 'inline' && handleMentionNavigationKey(e)) {
-            return;
-        }
-        if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-            e.preventDefault();
-            if (input.trim() && !isLoading) {
-                if (waitingInput) setWaitingInput(null);
-                sendMessage(input);
+    const handleRegenerate = useCallback(async (assistantIndex: number) => {
+        if (isLoading || !currentSessionId || !onResetSession) return;
+        let userMsg: ChatMessage | undefined;
+        for (let i = assistantIndex - 1; i >= 0; i--) {
+            if (messages[i].role === 'user') {
+                userMsg = messages[i];
+                break;
             }
         }
-    };
-
-    const handleStop = () => {
-        if (abortControllerRef.current) {
-            abortControllerRef.current.abort();
-            abortControllerRef.current = null;
-        }
-        setIsLoading(false);
-        setStreamThinking('');
-        setStreamToolCalls([]);
-        setStreamFinalContent('');
-        setWaitingInput(null);
-    };
-
-    const handleReset = useCallback(async (targetSeq: number, messageContent: string) => {
-        if (!currentSessionId || !onResetSession) return;
-        handleStop();
+        if (!userMsg || userMsg.seq === undefined) return;
         try {
-            await onResetSession(currentSessionId, targetSeq - 1);
-            setInput(messageContent);
-            initializedRef.current = false;
+            skipInitialSyncRef.current = true;
+            await onResetSession(currentSessionId, userMsg.seq - 1);
+            setMessages(prev => prev.filter(m => (m.seq ?? 0) < userMsg!.seq!));
+            await sendMessage(userMsg.content);
         } catch {
-            // 错误提示已在外层处理
+            skipInitialSyncRef.current = false;
         }
-    }, [currentSessionId, onResetSession]);
+    }, [isLoading, currentSessionId, onResetSession, messages, sendMessage]);
 
-    const renderMarkdown = (content: string) => {
-        if (!content) return null;
-        return (
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
-                {content}
-            </ReactMarkdown>
-        );
-    };
-
-    const handleCopyMessage = async (msgId: string, content: string) => {
+    const handleSubmitEdit = useCallback(async (msg: ChatMessage) => {
+        const trimmed = editingText.trim();
+        if (!trimmed || isLoading) return;
+        if (trimmed === msg.content.trim()) {
+            setEditingMsgId(null);
+            setEditingText('');
+            return;
+        }
+        if (!currentSessionId || !onResetSession || msg.seq === undefined) return;
+        setEditingMsgId(null);
+        setEditingText('');
         try {
-            await navigator.clipboard.writeText(content);
-            setCopiedMsgId(msgId);
-            setTimeout(() => {
-                setCopiedMsgId(prev => (prev === msgId ? null : prev));
-            }, 1600);
+            skipInitialSyncRef.current = true;
+            await onResetSession(currentSessionId, msg.seq - 1);
+            setMessages(prev => prev.filter(m => (m.seq ?? 0) < msg.seq!));
+            await sendMessage(trimmed);
         } catch {
-            // 忽略剪贴板权限受限
+            skipInitialSyncRef.current = false;
         }
-    };
+    }, [editingText, isLoading, currentSessionId, onResetSession, sendMessage]);
 
-    const renderProcess = (
-        idPrefix: string,
-        thinking: string,
-        toolCalls: ToolCallItem[],
-        streaming: boolean
-    ) => (
-        <details
-            className={`${styles.processBox} ${streaming ? styles.processBoxStreaming : ''}`}
-            open={streaming}
-        >
-            <summary className={styles.processSummary}>
-                <RightOutlined className={styles.processChevron} style={{fontSize: 10}}/>
-                {streaming && <span className={styles.spinner} aria-hidden="true"/>}
-                <span className={styles.processTitle}>
-                    {streaming ? '正在执行' : '执行过程'}
-                </span>
-                {toolCalls.map((tc, i) => {
-                    const chipClass = tc.success
-                        ? styles.toolChipOk
-                        : tc.result !== undefined
-                            ? styles.toolChipErr
-                            : '';
-                    return (
-                        <span key={`${idPrefix}-chip-${i}`} className={`${styles.toolChip} ${chipClass}`}>
-                            {tc.tool}
-                        </span>
-                    );
-                })}
-            </summary>
+    const roles = useMemo<BubbleListProps['roles']>(() => ({
+        user: {
+            placement: 'end',
+            variant: 'filled',
+            shape: 'corner',
+            styles: {
+                content: {
+                    background: 'var(--ui-signal)',
+                    color: 'var(--ui-btn-primary-text)',
+                    maxWidth: 560,
+                },
+            },
+        },
+        assistant: {
+            placement: 'start',
+            variant: 'borderless',
+            avatar: <AssistantMark/>,
+            styles: {
+                content: {
+                    padding: 0,
+                    maxWidth: '100%',
+                    width: '100%',
+                },
+            },
+        },
+    }), []);
 
-            <div className={styles.processBody}>
-                {thinking && (
-                    <div className={styles.thinkingBlock}>
-                        <div className={styles.thinkingLabel}>思考过程</div>
-                        <div>{thinking}</div>
-                    </div>
-                )}
-                {toolCalls.map((tc, i) => {
-                    const statusLabel = tc.success ? '完成' : tc.result !== undefined ? '失败' : '执行中';
-                    const statusClass = tc.success
-                        ? styles.toolCardStatusOk
-                        : tc.result !== undefined
-                            ? styles.toolCardStatusErr
-                            : '';
-                    return (
-                        <div key={`${idPrefix}-tool-${i}`} className={styles.toolCard}>
-                            <div className={styles.toolCardHeader}>
-                                <span className={styles.toolCardName}>{tc.tool}</span>
-                                <span className={`${styles.toolCardStatus} ${statusClass}`}>
-                                    {statusLabel}
-                                </span>
-                            </div>
-                            {tc.args && Object.keys(tc.args).length > 0 && (
-                                <pre className={styles.toolCode}>{JSON.stringify(tc.args, null, 2)}</pre>
-                            )}
-                            {tc.result !== undefined && (
-                                <pre className={styles.toolCode}>
-                                    {typeof tc.result === 'object'
-                                        ? JSON.stringify(tc.result, null, 2)
-                                        : String(tc.result)}
-                                </pre>
-                            )}
-                        </div>
-                    );
-                })}
-            </div>
-        </details>
-    );
+    // 历史消息列表与流式态分离，确保流式输出不触发历史消息重算
+    const historyBubbleItems = useMemo<BubbleDataType[]>(() => {
+        return messages.map((msg, msgIndex) => {
+            if (msg.role === 'user') {
+                const isCopied = copiedMsgId === msg.id;
+                const isEditing = editingMsgId === msg.id;
+                const canMutateHistory = Boolean(currentSessionId && onResetSession && !isLoading && msg.seq !== undefined);
 
-    const renderAssistantMessage = (msg: ChatMessage) => {
-        const toolCalls = msg.process?.toolCalls || [];
-        const hasProcess = Boolean(msg.process && (toolCalls.length > 0 || msg.process.thinking));
-
-        return (
-            <div key={msg.id} className={styles.assistantRow}>
-                <AssistantMark/>
-                <div className={styles.assistantBody}>
-                    {hasProcess && renderProcess(msg.id, msg.process!.thinking, toolCalls, false)}
-                    {msg.content && (
-                        <>
-                            <div className={`${styles.assistantProse} markdown-content`}>
-                                {renderMarkdown(msg.content)}
-                            </div>
-                            <div className={styles.assistantFooter}>
+                return {
+                    key: msg.id,
+                    role: 'user',
+                    content: isEditing ? (
+                        <div className={styles.editBox}>
+                            <textarea
+                                className={styles.editTextarea}
+                                rows={3}
+                                autoFocus
+                                value={editingText}
+                                onChange={(e) => setEditingText(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Escape') {
+                                        e.preventDefault();
+                                        setEditingMsgId(null);
+                                        setEditingText('');
+                                    } else if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                                        e.preventDefault();
+                                        handleSubmitEdit(msg);
+                                    }
+                                }}
+                                aria-label="编辑消息内容"
+                            />
+                            <div className={styles.editActions}>
                                 <button
                                     type="button"
-                                    className={`${styles.copyAction} ${
-                                        copiedMsgId === msg.id ? styles.copyActionCopied : ''
-                                    }`}
-                                    onClick={() => handleCopyMessage(msg.id, msg.content)}
+                                    className={styles.editCancelBtn}
+                                    onClick={() => {
+                                        setEditingMsgId(null);
+                                        setEditingText('');
+                                    }}
                                 >
-                                    {copiedMsgId === msg.id ? (
-                                        <CheckOutlined style={{fontSize: 12}}/>
-                                    ) : (
-                                        <CopyOutlined style={{fontSize: 12}}/>
-                                    )}
-                                    <span>{copiedMsgId === msg.id ? '已复制' : '复制'}</span>
+                                    取消
+                                </button>
+                                <button
+                                    type="button"
+                                    className={styles.editSaveBtn}
+                                    disabled={!editingText.trim()}
+                                    onClick={() => handleSubmitEdit(msg)}
+                                >
+                                    保存并重发
                                 </button>
                             </div>
-                        </>
-                    )}
-                </div>
-            </div>
-        );
-    };
+                        </div>
+                    ) : (
+                        <div className={styles.userBubbleContent}>{msg.content}</div>
+                    ),
+                    footer: !isEditing ? (
+                        <div className={styles.userFooter}>
+                            <button
+                                type="button"
+                                className={`${styles.copyAction} ${isCopied ? styles.copyActionCopied : ''}`}
+                                onClick={() => handleCopyMessage(msg.id, msg.content)}
+                            >
+                                {isCopied ? <CheckOutlined style={{fontSize: 12}}/> : <CopyOutlined style={{fontSize: 12}}/>}
+                                <span>{isCopied ? '已复制' : '复制'}</span>
+                            </button>
+                            {canMutateHistory && (
+                                <>
+                                    <button
+                                        type="button"
+                                        className={styles.resetAction}
+                                        onClick={() => {
+                                            setEditingMsgId(msg.id);
+                                            setEditingText(msg.content);
+                                        }}
+                                    >
+                                        <EditOutlined style={{fontSize: 12}}/>
+                                        <span>编辑</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={styles.resetAction}
+                                        onClick={() => handleReset(msg.seq!, msg.content)}
+                                    >
+                                        <RollbackOutlined style={{fontSize: 12}}/>
+                                        <span>回退重做</span>
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    ) : undefined,
+                };
+            }
 
-    const renderStreaming = () => {
+            const toolCalls = msg.process?.toolCalls || [];
+            const thinking = msg.process?.thinking || '';
+            const hasProcess = Boolean(thinking || toolCalls.length > 0);
+            const isCopied = copiedMsgId === msg.id;
+            const hasPrevUser = msgIndex > 0 && messages.slice(0, msgIndex).some(m => m.role === 'user' && m.seq !== undefined);
+            const canRegenerate = Boolean(currentSessionId && onResetSession && !isLoading && hasPrevUser);
+
+            return {
+                key: msg.id,
+                role: 'assistant',
+                content: (
+                    <div className={styles.assistantStack}>
+                        {hasProcess && (
+                            <ChatProcessChain
+                                idPrefix={msg.id}
+                                thinking={thinking}
+                                toolCalls={toolCalls}
+                                streaming={false}
+                            />
+                        )}
+                        <AssistantMarkdown content={msg.content}/>
+                    </div>
+                ),
+                footer: msg.content || canRegenerate ? (
+                    <div className={styles.msgActions}>
+                        {msg.content && (
+                            <button
+                                type="button"
+                                className={`${styles.copyAction} ${isCopied ? styles.copyActionCopied : ''}`}
+                                onClick={() => handleCopyMessage(msg.id, msg.content)}
+                            >
+                                {isCopied ? <CheckOutlined style={{fontSize: 12}}/> : <CopyOutlined style={{fontSize: 12}}/>}
+                                <span>{isCopied ? '已复制' : '复制'}</span>
+                            </button>
+                        )}
+                        {canRegenerate && (
+                            <button
+                                type="button"
+                                className={styles.resetAction}
+                                onClick={() => handleRegenerate(msgIndex)}
+                            >
+                                <ReloadOutlined style={{fontSize: 12}}/>
+                                <span>重新生成</span>
+                            </button>
+                        )}
+                    </div>
+                ) : undefined,
+            };
+        });
+    }, [
+        messages,
+        currentSessionId,
+        onResetSession,
+        isLoading,
+        copiedMsgId,
+        editingMsgId,
+        editingText,
+        handleReset,
+        handleCopyMessage,
+        handleRegenerate,
+        handleSubmitEdit,
+    ]);
+
+    const streamingBubbleItem = useMemo<BubbleDataType | null>(() => {
         if (!isLoading) return null;
         const hasContent = Boolean(streamThinking || streamToolCalls.length > 0 || streamFinalContent);
 
-        return (
-            <div className={styles.assistantRow}>
-                <AssistantMark/>
-                <div className={styles.assistantBody}>
-                    {!hasContent ? (
-                        <div className={styles.typingDots} aria-label="助手正在思考">
-                            <span/><span/><span/>
-                        </div>
-                    ) : (
-                        <>
-                            {(streamThinking || streamToolCalls.length > 0) &&
-                                renderProcess('stream', streamThinking, streamToolCalls, true)}
-                            {streamFinalContent && (
-                                <div className={`${styles.assistantProse} markdown-content`}>
-                                    {renderMarkdown(streamFinalContent)}
-                                </div>
-                            )}
-                        </>
-                    )}
+        return {
+            key: '__streaming__',
+            role: 'assistant',
+            loading: !hasContent,
+            loadingRender: () => (
+                <div className={styles.typingDots} aria-label="助手正在思考">
+                    <span/><span/><span/>
                 </div>
-            </div>
-        );
-    };
+            ),
+            content: hasContent ? (
+                <div className={styles.assistantStack}>
+                    {(streamThinking || streamToolCalls.length > 0) && (
+                        <ChatProcessChain
+                            idPrefix="stream"
+                            thinking={streamThinking}
+                            toolCalls={streamToolCalls}
+                            streaming={true}
+                            hasFinalContent={Boolean(streamFinalContent)}
+                        />
+                    )}
+                    <AssistantMarkdown content={streamFinalContent}/>
+                </div>
+            ) : undefined,
+        };
+    }, [isLoading, streamThinking, streamToolCalls, streamFinalContent]);
 
-    const onlineDeviceCount = useMemo(
-        () => devices.filter(d => d.online).length,
-        [devices]
-    );
-    const enabledGraphCount = useMemo(
-        () => graphs.filter(g => g.enable).length,
-        [graphs]
-    );
+    const bubbleItems = useMemo<BubbleDataType[]>(() => {
+        return streamingBubbleItem
+            ? [...historyBubbleItems, streamingBubbleItem]
+            : historyBubbleItems;
+    }, [historyBubbleItems, streamingBubbleItem]);
 
     const isEmptyConversation = messages.length === 0 && !isLoading;
-
-    const renderComposer = (centered: boolean) => (
-        <div className={centered ? styles.composerCentered : styles.composerWrap}>
-            <form className={styles.composerForm} onSubmit={handleSubmit}>
-                <div className={styles.composerAnchor} ref={composerRef}>
-                    {mentionOpen && (
-                        <div className={styles.mentionPopover} role="dialog" aria-label="引用设备或自动化规则">
-                            <div className={styles.mentionHeader}>
-                                <div className={styles.mentionTabs} role="tablist" aria-label="引用分类">
-                                    <button
-                                        type="button"
-                                        role="tab"
-                                        aria-selected={mentionTab === 'all'}
-                                        className={`${styles.mentionTab} ${
-                                            mentionTab === 'all' ? styles.mentionTabActive : ''
-                                        }`}
-                                        onClick={() => setMentionTab('all')}
-                                    >
-                                        全部
-                                    </button>
-                                    <button
-                                        type="button"
-                                        role="tab"
-                                        aria-selected={mentionTab === 'device'}
-                                        className={`${styles.mentionTab} ${
-                                            mentionTab === 'device' ? styles.mentionTabActive : ''
-                                        }`}
-                                        onClick={() => setMentionTab('device')}
-                                    >
-                                        设备
-                                        {devices.length > 0 && (
-                                            <span className={styles.mentionTabCount}>{devices.length}</span>
-                                        )}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        role="tab"
-                                        aria-selected={mentionTab === 'graph'}
-                                        className={`${styles.mentionTab} ${
-                                            mentionTab === 'graph' ? styles.mentionTabActive : ''
-                                        }`}
-                                        onClick={() => setMentionTab('graph')}
-                                    >
-                                        自动化规则
-                                        {graphs.length > 0 && (
-                                            <span className={styles.mentionTabCount}>{graphs.length}</span>
-                                        )}
-                                    </button>
-                                </div>
-
-                                {mentionMode === 'button' && (
-                                    <div className={styles.mentionSearchBox}>
-                                        <SearchOutlined className={styles.mentionSearchIcon} style={{fontSize: 12}}/>
-                                        <input
-                                            ref={mentionSearchRef}
-                                            type="text"
-                                            className={styles.mentionSearchInput}
-                                            placeholder="搜索设备、房间或规则"
-                                            value={mentionQuery}
-                                            onChange={(e) => setMentionQuery(e.target.value)}
-                                            onKeyDown={handleMentionNavigationKey}
-                                            aria-label="搜索要引用的设备或规则"
-                                        />
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className={styles.mentionList} ref={mentionListRef} role="listbox">
-                                {mentionOptions.length === 0 ? (
-                                    <div className={styles.mentionEmpty}>
-                                        {mentionTab === 'graph' && graphsLoading
-                                            ? '正在加载自动化规则…'
-                                            : mentionQuery.trim()
-                                                ? '没有匹配的设备或规则'
-                                                : '暂无可引用项'}
-                                    </div>
-                                ) : (
-                                    mentionOptions.map((opt, idx) => (
-                                        <button
-                                            key={opt.key}
-                                            type="button"
-                                            role="option"
-                                            aria-selected={idx === mentionIndex}
-                                            data-mention-index={idx}
-                                            className={`${styles.mentionItem} ${
-                                                idx === mentionIndex ? styles.mentionItemActive : ''
-                                            }`}
-                                            onMouseEnter={() => setMentionIndex(idx)}
-                                            onMouseDown={(e) => {
-                                                // 阻止失焦导致的选区丢失
-                                                e.preventDefault();
-                                                handleSelectMention(opt);
-                                            }}
-                                        >
-                                            <span className={styles.mentionItemIcon} aria-hidden="true">
-                                                {opt.kind === 'device' ? (
-                                                    <AppstoreOutlined style={{fontSize: 13}}/>
-                                                ) : (
-                                                    <ApartmentOutlined style={{fontSize: 13}}/>
-                                                )}
-                                            </span>
-                                            <span className={styles.mentionItemMain}>
-                                                <span className={styles.mentionItemTitle}>{opt.title}</span>
-                                                <span className={styles.mentionItemMeta}>{opt.meta}</span>
-                                            </span>
-                                            <span
-                                                className={`${styles.mentionStatusDot} ${
-                                                    opt.active ? styles.mentionStatusDotOn : ''
-                                                }`}
-                                                aria-hidden="true"
-                                            />
-                                        </button>
-                                    ))
-                                )}
-                            </div>
-                        </div>
-                    )}
-
-                    <div className={styles.composerBox}>
-                        <textarea
-                            ref={textareaRef}
-                            rows={1}
-                            className={styles.textarea}
-                            value={input}
-                            onChange={handleInputChange}
-                            onKeyDown={handleKeyDown}
-                            placeholder={
-                                waitingInput
-                                    ? '选择上方选项，或输入自定义回复'
-                                    : '问问智者，或输入 @ 引用设备与自动化规则'
-                            }
-                            disabled={isLoading && !waitingInput}
-                            aria-label="消息输入框"
-                        />
-
-                        <div className={styles.composerToolbar}>
-                            <button
-                                type="button"
-                                className={`${styles.mentionTrigger} ${
-                                    mentionOpen ? styles.mentionTriggerActive : ''
-                                }`}
-                                onClick={handleToggleMentionButton}
-                                disabled={isLoading && !waitingInput}
-                                aria-haspopup="dialog"
-                                aria-expanded={mentionOpen}
-                                aria-label="引用设备或自动化规则"
-                                title="引用设备或自动化规则 (@)"
-                            >
-                                <span className={styles.mentionAt}>@</span>
-                                <span>引用设备或规则</span>
-                            </button>
-
-                            {isLoading ? (
-                                <button
-                                    type="button"
-                                    className={styles.stopButton}
-                                    onClick={handleStop}
-                                    aria-label="停止生成"
-                                    title="停止生成"
-                                >
-                                    <span className={styles.stopSquare} aria-hidden="true"/>
-                                </button>
-                            ) : (
-                                <button
-                                    type="submit"
-                                    className={styles.sendButton}
-                                    disabled={!input.trim()}
-                                    aria-label="发送消息"
-                                    title="发送 (Enter)"
-                                >
-                                    <ArrowUpOutlined style={{fontSize: 15}}/>
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                </div>
-                {!centered && (
-                    <div className={styles.composerHint}>Enter 发送，Shift + Enter 换行</div>
-                )}
-            </form>
-        </div>
-    );
 
     return (
         <div className={styles.container}>
             {isEmptyConversation ? (
                 <div className={styles.welcomeStage}>
                     <div className={styles.welcome}>
-                        <div className={styles.welcomeBadge}>
-                            <span className={styles.hubMetricDot} aria-hidden="true"/>
-                            <span>
-                                中枢已连接 · <strong>{onlineDeviceCount}</strong>/{devices.length} 设备在线
-                                {graphs.length > 0 ? ` · ${enabledGraphCount} 条规则运行中` : ''}
-                            </span>
-                        </div>
-
                         <h1 className={styles.welcomeTitle}>你好，想搭建什么自动化？</h1>
 
-                        {renderComposer(true)}
+                        <ChatComposer
+                            sessionKey={currentSessionId || '__new__'}
+                            centered={true}
+                            isLoading={isLoading}
+                            hasWaitingInput={Boolean(waitingInput)}
+                            draftInsert={draftInsert}
+                            resetDraft={resetDraft}
+                            devices={devices}
+                            graphs={graphs}
+                            graphsLoading={graphsLoading}
+                            onEnsureGraphsLoaded={onEnsureGraphsLoaded}
+                            onSend={sendMessage}
+                            onStop={handleStop}
+                        />
 
-                        <div className={styles.starterChips}>
-                            {STARTER_PROMPTS.map(item => {
-                                const toneClass =
-                                    item.tone === 'warm'
-                                        ? styles.starterIconWarm
-                                        : item.tone === 'info'
-                                            ? styles.starterIconInfo
-                                            : styles.starterIconSignal;
-                                const Icon =
-                                    item.tone === 'warm'
-                                        ? BulbOutlined
-                                        : item.tone === 'info'
-                                            ? ApartmentOutlined
-                                            : ThunderboltOutlined;
-                                return (
-                                    <button
-                                        key={item.key}
-                                        type="button"
-                                        className={styles.starterChip}
-                                        onClick={() => sendMessage(item.prompt)}
-                                    >
-                                        <span className={`${styles.starterChipIcon} ${toneClass}`} aria-hidden="true">
-                                            <Icon style={{fontSize: 13}}/>
-                                        </span>
-                                        <span>{item.label}</span>
-                                    </button>
-                                );
-                            })}
-                        </div>
+                        <Prompts
+                            className={styles.promptsWrap}
+                            wrap
+                            styles={{
+                                list: {justifyContent: 'center', gap: 8},
+                                item: {
+                                    padding: '6px 12px',
+                                    borderRadius: 'var(--radius-md)',
+                                    background: 'var(--ui-subtle)',
+                                    border: '1px solid var(--ui-border)',
+                                    fontSize: 12.5,
+                                },
+                            }}
+                            items={STARTER_PROMPTS}
+                            onItemClick={(info) => {
+                                const item = info.data as PromptProps & { prompt?: string };
+                                if (item.prompt) sendMessage(item.prompt);
+                            }}
+                        />
                     </div>
                 </div>
             ) : (
@@ -1107,37 +828,36 @@ export default function Chat({
                             onScroll={handleMessagesScroll}
                         >
                             <div className={styles.messagesInner}>
-                                {messages.map(msg =>
-                                    msg.role === 'user' ? (
-                                        <div key={msg.id} className={styles.userRow}>
-                                            <div className={styles.userBlock}>
-                                                <div className={styles.userBubble}>{msg.content}</div>
-                                                {currentSessionId && onResetSession && !isLoading && msg.seq !== undefined && (
-                                                    <button
-                                                        type="button"
-                                                        className={styles.resetAction}
-                                                        onClick={() => handleReset(msg.seq!, msg.content)}
-                                                    >
-                                                        <RollbackOutlined style={{fontSize: 12}}/>
-                                                        <span>回退重做</span>
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        renderAssistantMessage(msg)
-                                    )
-                                )}
-
-                                {renderStreaming()}
+                                <Bubble.List
+                                    className={styles.bubbleList}
+                                    autoScroll={false}
+                                    roles={roles}
+                                    items={bubbleItems}
+                                />
 
                                 {waitingInput && Array.isArray(waitingInput.options) && waitingInput.options.length > 0 && (
                                     <div className={styles.optionCard}>
-                                        <p className={styles.optionTitle}>需要你的确认</p>
+                                        <div className={styles.optionHeader}>
+                                            <p className={styles.optionTitle}>需要你的确认</p>
+                                            {waitingInput.question && (
+                                                <button
+                                                    type="button"
+                                                    className={`${styles.copyAction} ${
+                                                        copiedMsgId === '__waiting_input__' ? styles.copyActionCopied : ''
+                                                    }`}
+                                                    onClick={() => handleCopyMessage('__waiting_input__', waitingInput.question)}
+                                                >
+                                                    {copiedMsgId === '__waiting_input__' ? (
+                                                        <CheckOutlined style={{fontSize: 12}}/>
+                                                    ) : (
+                                                        <CopyOutlined style={{fontSize: 12}}/>
+                                                    )}
+                                                    <span>{copiedMsgId === '__waiting_input__' ? '已复制' : '复制'}</span>
+                                                </button>
+                                            )}
+                                        </div>
                                         {waitingInput.question && (
-                                            <div className={`${styles.optionQuestion} markdown-content`}>
-                                                {renderMarkdown(waitingInput.question)}
-                                            </div>
+                                            <AssistantMarkdown content={waitingInput.question}/>
                                         )}
                                         <div className={styles.optionList}>
                                             {waitingInput.options.map((opt, i) => (
@@ -1172,7 +892,20 @@ export default function Chat({
                         )}
                     </div>
 
-                    {renderComposer(false)}
+                    <ChatComposer
+                        sessionKey={currentSessionId || '__new__'}
+                        centered={false}
+                        isLoading={isLoading}
+                        hasWaitingInput={Boolean(waitingInput)}
+                        draftInsert={draftInsert}
+                        resetDraft={resetDraft}
+                        devices={devices}
+                        graphs={graphs}
+                        graphsLoading={graphsLoading}
+                        onEnsureGraphsLoaded={onEnsureGraphsLoaded}
+                        onSend={sendMessage}
+                        onStop={handleStop}
+                    />
                 </>
             )}
         </div>

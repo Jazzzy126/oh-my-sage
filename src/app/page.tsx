@@ -1,6 +1,7 @@
 'use client';
 
 import React, {useState, useCallback, useRef, useEffect} from 'react';
+import dynamic from 'next/dynamic';
 import {message} from 'antd';
 import {
     ApartmentOutlined,
@@ -10,14 +11,18 @@ import {
     MenuOutlined,
     SearchOutlined,
     SettingOutlined,
+    SlidersOutlined,
 } from '@ant-design/icons';
 import Chat from '@/components/Chat';
-import DevicePanel from '@/components/DevicePanel';
-import GraphPanel from '@/components/GraphPanel';
 import SessionPanel from '@/components/SessionPanel';
 import LoginPage from '@/components/LoginPage';
+import SettingsModal from '@/components/SettingsModal';
 import {ThemeToggleButton} from '@/components/ThemeProvider';
 import styles from './page.module.css';
+
+// 非首屏面板按需懒加载，减小首页 JS 体积
+const DevicePanel = dynamic(() => import('@/components/DevicePanel'), {ssr: false});
+const GraphPanel = dynamic(() => import('@/components/GraphPanel'), {ssr: false});
 
 interface SessionMeta {
     id: string;
@@ -43,6 +48,7 @@ interface GraphSummary {
     name: string;
     enable: boolean;
     lastUpdateTime?: number;
+    rooms?: string[];
 }
 
 type MainView = 'chat' | 'graphs' | 'devices';
@@ -68,6 +74,10 @@ function BrandGlyph({size = 20}: {size?: number}) {
 export default function HomePage() {
     const [leftOpen, setLeftOpen] = useState(true);
     const [activeView, setActiveView] = useState<MainView>('chat');
+    const [visitedViews, setVisitedViews] = useState<{ graphs: boolean; devices: boolean }>({
+        graphs: false,
+        devices: false,
+    });
     const [sessionSearchOpen, setSessionSearchOpen] = useState(false);
     const [draftInsert, setDraftInsert] = useState<{ text: string; seq: number } | null>(null);
 
@@ -88,6 +98,7 @@ export default function HomePage() {
     const graphsLoadedRef = useRef(false);
 
     const [settingsOpen, setSettingsOpen] = useState(false);
+    const [configModalOpen, setConfigModalOpen] = useState(false);
     const [loggingOut, setLoggingOut] = useState(false);
     const settingsRef = useRef<HTMLDivElement | null>(null);
 
@@ -97,10 +108,11 @@ export default function HomePage() {
         }
     }, []);
 
-    const loadDevices = useCallback(async () => {
+    const loadDevices = useCallback(async (forceRefresh = false) => {
         setDevicesLoading(true);
         try {
-            const response = await fetch('/api/devices');
+            const url = forceRefresh ? '/api/devices?refresh=true' : '/api/devices';
+            const response = await fetch(url);
             const result = await response.json();
             if (result.success) {
                 setDevices(result.devices || []);
@@ -226,6 +238,7 @@ export default function HomePage() {
     const handleSelectSession = async (sessionId: string) => {
         setActiveView('chat');
         setActiveSessionId(sessionId);
+        setCurrentMessages([]);
         closeDrawerOnMobile();
         try {
             const response = await fetch(`/api/sessions/${sessionId}`);
@@ -349,6 +362,9 @@ export default function HomePage() {
 
     const handleViewChange = (view: MainView) => {
         setActiveView(view);
+        if (view === 'graphs' || view === 'devices') {
+            setVisitedViews(prev => (prev[view] ? prev : {...prev, [view]: true}));
+        }
         if (view === 'graphs' && !graphsLoadedRef.current) {
             loadGraphs();
         }
@@ -590,6 +606,25 @@ export default function HomePage() {
                                 type="button"
                                 role="menuitem"
                                 className={styles.settingsItem}
+                                onClick={() => {
+                                    setSettingsOpen(false);
+                                    setConfigModalOpen(true);
+                                }}
+                            >
+                                <span className={styles.settingsItemIcon} aria-hidden="true">
+                                    <SlidersOutlined style={{fontSize: 14}}/>
+                                </span>
+                                <span className={styles.settingsItemText}>
+                                    <span className={styles.settingsItemTitle}>模型与网关配置</span>
+                                    <span className={styles.settingsItemDesc}>
+                                        设置 API Key、模型及中枢网关地址
+                                    </span>
+                                </span>
+                            </button>
+                            <button
+                                type="button"
+                                role="menuitem"
+                                className={styles.settingsItem}
                                 onClick={handleLogout}
                                 disabled={loggingOut}
                             >
@@ -648,8 +683,8 @@ export default function HomePage() {
                         />
                     </div>
 
-                    {activeView === 'graphs' && (
-                        <div className={styles.viewPane}>
+                    {visitedViews.graphs && (
+                        <div className={`${styles.viewPane} ${activeView !== 'graphs' ? styles.viewPaneHidden : ''}`}>
                             <GraphPanel
                                 graphs={graphs}
                                 loading={graphsLoading}
@@ -661,19 +696,27 @@ export default function HomePage() {
                         </div>
                     )}
 
-                    {activeView === 'devices' && (
-                        <div className={styles.viewPane}>
+                    {visitedViews.devices && (
+                        <div className={`${styles.viewPane} ${activeView !== 'devices' ? styles.viewPaneHidden : ''}`}>
                             <DevicePanel
                                 devices={devices}
                                 stats={stats}
                                 loading={devicesLoading}
-                                onRefresh={loadDevices}
+                                onRefresh={() => loadDevices(true)}
                                 onInsertDevice={handleInsertToChat}
                             />
                         </div>
                     )}
                 </div>
             </main>
+
+            <SettingsModal
+                open={configModalOpen}
+                onClose={() => setConfigModalOpen(false)}
+                onSaved={() => {
+                    message.success('配置已保存，下次对话或连接立即生效');
+                }}
+            />
         </div>
     );
 }

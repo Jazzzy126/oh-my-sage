@@ -5,6 +5,7 @@
 
 import {NextRequest, NextResponse} from 'next/server';
 import {connectGateway, disconnectGateway, isGatewayConnected} from '@/server/gateway/shared';
+import {getSettingsStore} from '@/server/config/store';
 
 export const runtime = 'nodejs';
 
@@ -25,7 +26,7 @@ export async function GET() {
  */
 export async function POST(request: NextRequest) {
     try {
-        const {passcode} = await request.json();
+        const {passcode, gatewayUrl: rawGatewayUrl} = await request.json();
 
         if (typeof passcode !== 'string' || !/^\d{6}$/.test(passcode)) {
             return NextResponse.json({
@@ -35,10 +36,24 @@ export async function POST(request: NextRequest) {
             }, {status: 400});
         }
 
-        if (!process.env.GATEWAY_URL) {
-            return NextResponse.json({success: false, error: '未配置网关地址', message: '请在服务端设置 GATEWAY_URL'}, {status: 400});
+        const settingsStore = getSettingsStore();
+        let gatewayUrl = '';
+        if (typeof rawGatewayUrl === 'string' && rawGatewayUrl.trim()) {
+            const updated = await settingsStore.update({gatewayUrl: rawGatewayUrl});
+            gatewayUrl = updated.gatewayUrl;
+        } else {
+            const effective = await settingsStore.getEffective();
+            gatewayUrl = effective.gatewayUrl;
         }
-        await connectGateway(passcode);
+
+        if (!gatewayUrl) {
+            return NextResponse.json({
+                success: false,
+                error: '未配置网关地址',
+                message: '请先在页面中填写中枢网关地址',
+            }, {status: 400});
+        }
+        await connectGateway(passcode, gatewayUrl);
 
         return NextResponse.json({
             success: true,

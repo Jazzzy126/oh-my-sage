@@ -1,6 +1,6 @@
 import {NextRequest, NextResponse} from 'next/server';
 import {getGateway, isGatewayConnected} from '@/server/gateway/shared';
-import {getDevice} from '@/core';
+import {getDevice, getDeviceList} from '@/core';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -10,6 +10,7 @@ export async function GET(request: NextRequest) {
         const {searchParams} = new URL(request.url);
         const roomFilter = searchParams.get('room');
         const onlineOnly = searchParams.get('online') === 'true';
+        const forceRefresh = searchParams.get('refresh') === 'true';
         const dids = searchParams.get('dids')?.split(',').map(did => did.trim()).filter(Boolean);
 
         if (!isGatewayConnected()) {
@@ -27,8 +28,7 @@ export async function GET(request: NextRequest) {
             const details = await getDevice(gateway, dids);
             return NextResponse.json(details, {status: details.success ? 200 : 500});
         }
-        const result = await gateway.callApi<{ devList?: Record<string, { name: string; model: string; modelName: string; online: boolean; roomId: string; roomName: string; icon?: string }> }>('getDevList', {}, 10000);
-        const devList = result.devList || {};
+        const devList = (await getDeviceList(gateway, {force: forceRefresh})) || {};
 
         let deviceList = Object.entries(devList).map(([did, device]) => ({
             did,
