@@ -1,13 +1,9 @@
 'use client';
 
-import React from 'react';
-import {Typography, Button, Empty, Spin, Space, Popconfirm} from 'antd';
-import {
-    SyncOutlined, MessageOutlined, DeleteOutlined,
-    ClockCircleOutlined, PlusOutlined, HistoryOutlined,
-} from '@ant-design/icons';
-
-const {Text} = Typography;
+import React, {useEffect, useMemo, useRef, useState} from 'react';
+import {CloseOutlined, DeleteOutlined, PlusOutlined, SearchOutlined, SyncOutlined} from '@ant-design/icons';
+import ConfirmModal from './ConfirmModal';
+import styles from './SessionPanel.module.css';
 
 interface SessionMeta {
     id: string;
@@ -23,179 +19,396 @@ interface SessionPanelProps {
     sessions: SessionMeta[];
     activeSessionId?: string;
     loading?: boolean;
+    embedded?: boolean;
+    searchOpen?: boolean;
     onSelectSession: (sessionId: string) => void;
     onDeleteSession: (sessionId: string) => void;
     onNewSession: () => void;
     onRefresh: () => void;
 }
 
-function formatTime(isoString: string): string {
+type TimeBucket = 'today' | 'yesterday' | 'earlier';
+
+const BUCKET_LABELS: Record<TimeBucket, string> = {
+    today: '今天',
+    yesterday: '昨天',
+    earlier: '更早',
+};
+
+function getTimeBucket(isoString: string, now: Date): TimeBucket {
     const date = new Date(isoString);
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    if (diff < 24 * 60 * 60 * 1000 && date.getDate() === now.getDate()) {
-        return date.toLocaleTimeString('zh-CN', {hour: '2-digit', minute: '2-digit'});
+    if (
+        date.getFullYear() === now.getFullYear() &&
+        date.getMonth() === now.getMonth() &&
+        date.getDate() === now.getDate()
+    ) {
+        return 'today';
     }
     const yesterday = new Date(now);
     yesterday.setDate(yesterday.getDate() - 1);
-    if (date.getDate() === yesterday.getDate() &&
+    if (
+        date.getFullYear() === yesterday.getFullYear() &&
         date.getMonth() === yesterday.getMonth() &&
-        date.getFullYear() === yesterday.getFullYear()) {
-        return '昨天';
+        date.getDate() === yesterday.getDate()
+    ) {
+        return 'yesterday';
+    }
+    return 'earlier';
+}
+
+function formatTime(isoString: string): string {
+    const date = new Date(isoString);
+    const now = new Date();
+    const bucket = getTimeBucket(isoString, now);
+    if (bucket === 'today' || bucket === 'yesterday') {
+        return date.toLocaleTimeString('zh-CN', {hour: '2-digit', minute: '2-digit'});
     }
     return date.toLocaleDateString('zh-CN', {month: 'numeric', day: 'numeric'});
 }
 
 export default function SessionPanel({
-                                         sessions, activeSessionId, loading = false,
-                                         onSelectSession, onDeleteSession, onNewSession, onRefresh,
-                                     }: SessionPanelProps) {
+    sessions,
+    activeSessionId,
+    loading = false,
+    embedded = false,
+    searchOpen = false,
+    onSelectSession,
+    onDeleteSession,
+    onNewSession,
+    onRefresh,
+}: SessionPanelProps) {
+    const [searchText, setSearchText] = useState('');
+    const [pendingDelete, setPendingDelete] = useState<SessionMeta | null>(null);
+    const searchInputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (embedded && searchOpen) {
+            requestAnimationFrame(() => searchInputRef.current?.focus());
+        } else if (embedded && !searchOpen) {
+            setSearchText('');
+        }
+    }, [embedded, searchOpen]);
+
+    const filteredFlatSessions = useMemo(() => {
+        const keyword = searchText.trim().toLowerCase();
+        if (!keyword) return sessions;
+        return sessions.filter((session) => {
+            const matchTitle = (session.title || '').toLowerCase().includes(keyword);
+            const matchSummary = (session.summary || '').toLowerCase().includes(keyword);
+            return matchTitle || matchSummary;
+        });
+    }, [sessions, searchText]);
+
+    const groupedSessions = useMemo(() => {
+        const keyword = searchText.trim().toLowerCase();
+        const now = new Date();
+        const buckets: Record<TimeBucket, SessionMeta[]> = {
+            today: [],
+            yesterday: [],
+            earlier: [],
+        };
+        for (const session of sessions) {
+            if (keyword) {
+                const matchTitle = (session.title || '').toLowerCase().includes(keyword);
+                const matchSummary = (session.summary || '').toLowerCase().includes(keyword);
+                if (!matchTitle && !matchSummary) continue;
+            }
+            const bucket = getTimeBucket(session.updatedAt, now);
+            buckets[bucket].push(session);
+        }
+        return (['today', 'yesterday', 'earlier'] as TimeBucket[])
+            .filter((key) => buckets[key].length > 0)
+            .map((key) => ({
+                key,
+                label: BUCKET_LABELS[key],
+                items: buckets[key],
+            }));
+    }, [sessions, searchText]);
+
+    const showInitialLoading = loading && sessions.length === 0;
+    const hasFilter = searchText.trim().length > 0;
+
+    if (embedded) {
+        return (
+            <div className={`${styles.panel} ${styles.panelEmbedded}`} aria-label="对话历史">
+                <div className={styles.compactHeader}>
+                    <span className={styles.compactTitle}>全部</span>
+                    <button
+                        type="button"
+                        className={styles.compactRefresh}
+                        onClick={onRefresh}
+                        disabled={loading}
+                        aria-label="刷新对话历史"
+                        title="刷新对话历史"
+                    >
+                        <SyncOutlined spin={loading} style={{fontSize: 12}}/>
+                    </button>
+                </div>
+
+                {searchOpen && (
+                    <div className={styles.compactSearchWrap}>
+                        <div className={styles.searchBox}>
+                            <span className={styles.searchIcon} aria-hidden="true">
+                                <SearchOutlined style={{fontSize: 12}}/>
+                            </span>
+                            <input
+                                ref={searchInputRef}
+                                type="text"
+                                className={styles.compactSearchInput}
+                                placeholder="搜索对话…"
+                                value={searchText}
+                                onChange={(e) => setSearchText(e.target.value)}
+                                aria-label="搜索对话历史"
+                            />
+                            {searchText && (
+                                <button
+                                    type="button"
+                                    className={styles.clearSearch}
+                                    onClick={() => setSearchText('')}
+                                    aria-label="清除搜索"
+                                >
+                                    <CloseOutlined style={{fontSize: 10}}/>
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                <div className={styles.compactList}>
+                    {showInitialLoading ? (
+                        <div className={styles.compactSkeletonList} aria-label="正在加载对话历史">
+                            {[0, 1, 2, 3].map((i) => (
+                                <div key={i} className={styles.compactSkeletonRow}/>
+                            ))}
+                        </div>
+                    ) : filteredFlatSessions.length === 0 ? (
+                        <div className={styles.compactEmpty}>
+                            {hasFilter ? '没有匹配的对话' : '暂无历史对话'}
+                        </div>
+                    ) : (
+                        filteredFlatSessions.map((session) => {
+                            const isActive = session.id === activeSessionId;
+                            return (
+                                <div
+                                    key={session.id}
+                                    className={`${styles.compactItem} ${isActive ? styles.compactItemActive : ''}`}
+                                >
+                                    <button
+                                        type="button"
+                                        className={styles.compactItemMain}
+                                        aria-current={isActive ? 'page' : undefined}
+                                        title={session.title || '未命名对话'}
+                                        onClick={() => onSelectSession(session.id)}
+                                    >
+                                        <span className={styles.compactItemTitle}>
+                                            {session.title || '未命名对话'}
+                                        </span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        className={styles.compactDelete}
+                                        aria-label={`删除对话「${session.title || '未命名对话'}」`}
+                                        title="删除对话"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setPendingDelete(session);
+                                        }}
+                                    >
+                                        <DeleteOutlined style={{fontSize: 12}}/>
+                                    </button>
+                                </div>
+                            );
+                        })
+                    )}
+                </div>
+
+                <ConfirmModal
+                    open={pendingDelete !== null}
+                    title={`删除对话「${pendingDelete?.title || '未命名对话'}」？`}
+                    description="删除后无法恢复该对话的历史消息。"
+                    confirmText="删除"
+                    cancelText="取消"
+                    danger
+                    onCancel={() => setPendingDelete(null)}
+                    onConfirm={async () => {
+                        if (!pendingDelete) return;
+                        await onDeleteSession(pendingDelete.id);
+                        setPendingDelete(null);
+                    }}
+                />
+            </div>
+        );
+    }
+
     return (
-        <div style={{height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column'}}>
-            {/* 头部 */}
-            <div style={{
-                padding: '16px 16px 12px',
-                borderBottom: '1px solid var(--border-subtle)',
-            }}>
-                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                    <Space size={8}>
-                        <HistoryOutlined style={{color: '#818cf8', fontSize: 15}}/>
-                        <Text strong style={{color: 'var(--text-bright)', fontSize: 14}}>对话历史</Text>
-                    </Space>
-                    <Space size={6}>
-                        <Button
-                            type="primary"
-                            icon={<PlusOutlined/>}
-                            size="small"
+        <div className={styles.panel} aria-label="对话历史">
+            <div className={styles.header}>
+                <div className={styles.headerTop}>
+                    <div className={styles.titleGroup}>
+                        <h2 className={styles.title}>对话历史</h2>
+                        {sessions.length > 0 && (
+                            <span className={styles.count} aria-label={`共 ${sessions.length} 条对话`}>
+                                {sessions.length}
+                            </span>
+                        )}
+                    </div>
+
+                    <div className={styles.headerActions}>
+                        <button
+                            type="button"
+                            className={styles.newButton}
                             onClick={onNewSession}
-                            style={{borderRadius: 'var(--radius-full)', fontSize: 12, height: 28}}
                         >
-                            新对话
-                        </Button>
-                        <Button
-                            icon={<SyncOutlined/>}
-                            size="small"
+                            <PlusOutlined style={{fontSize: 12}}/>
+                            <span>新对话</span>
+                        </button>
+
+                        <button
+                            type="button"
+                            className={styles.refreshButton}
                             onClick={onRefresh}
-                            loading={loading}
-                            style={{
-                                borderRadius: 'var(--radius-full)',
-                                background: 'var(--bg-surface)',
-                                borderColor: 'var(--border-default)',
-                                color: 'var(--text-secondary)',
-                                width: 28, height: 28,
-                            }}
-                        />
-                    </Space>
+                            disabled={loading}
+                            aria-label="刷新对话历史"
+                            title="刷新对话历史"
+                        >
+                            <SyncOutlined spin={loading} style={{fontSize: 13}}/>
+                        </button>
+                    </div>
+                </div>
+
+                <div className={styles.searchBox}>
+                    <span className={styles.searchIcon} aria-hidden="true">
+                        <SearchOutlined style={{fontSize: 13}}/>
+                    </span>
+                    <input
+                        type="text"
+                        className={styles.searchInput}
+                        placeholder="搜索对话标题或摘要"
+                        value={searchText}
+                        onChange={(e) => setSearchText(e.target.value)}
+                        aria-label="搜索对话历史"
+                    />
+                    {searchText && (
+                        <button
+                            type="button"
+                            className={styles.clearSearch}
+                            onClick={() => setSearchText('')}
+                            aria-label="清除搜索"
+                        >
+                            <CloseOutlined style={{fontSize: 11}}/>
+                        </button>
+                    )}
                 </div>
             </div>
 
-            {/* Session 列表 */}
-            <div style={{flex: 1, minHeight: 0, overflow: 'auto', padding: '8px'}}>
-                {loading ? (
-                    <div style={{textAlign: 'center', padding: 40}}>
-                        <Spin indicator={<SyncOutlined style={{fontSize: 20, color: '#818cf8'}} spin/>}/>
+            <div className={styles.list}>
+                {showInitialLoading ? (
+                    <div className={styles.skeletonList} aria-label="正在加载对话历史">
+                        {[0, 1, 2].map((i) => (
+                            <div key={i} className={styles.skeletonCard}>
+                                <div className={styles.skeletonLine}/>
+                                <div className={styles.skeletonLineShort}/>
+                            </div>
+                        ))}
                     </div>
-                ) : sessions.length === 0 ? (
-                    <div style={{textAlign: 'center', padding: '40px 20px'}}>
-                        <MessageOutlined style={{fontSize: 28, color: 'var(--text-muted)', marginBottom: 12}}/>
-                        <Text style={{display: 'block', color: 'var(--text-muted)', fontSize: 13}}>暂无对话历史</Text>
+                ) : groupedSessions.length === 0 ? (
+                    <div className={styles.emptyState}>
+                        <p className={styles.emptyTitle}>
+                            {hasFilter ? '没有匹配的对话' : '还没有对话记录'}
+                        </p>
+                        <p className={styles.emptyDesc}>
+                            {hasFilter
+                                ? '尝试更换搜索关键词。'
+                                : '描述你想搭建或调整的米家自动化场景，历史对话会自动保存在这里。'}
+                        </p>
+                        <button
+                            type="button"
+                            className={styles.emptyAction}
+                            onClick={hasFilter ? () => setSearchText('') : onNewSession}
+                        >
+                            {hasFilter ? '清除搜索' : '开始新对话'}
+                        </button>
                     </div>
                 ) : (
-                    sessions.map(session => {
-                        const isActive = session.id === activeSessionId;
-                        return (
-                            <div
-                                key={session.id}
-                                onClick={() => onSelectSession(session.id)}
-                                style={{
-                                    padding: '12px 14px',
-                                    marginBottom: 4,
-                                    cursor: 'pointer',
-                                    borderRadius: 'var(--radius-md)',
-                                    background: isActive ? 'rgba(99,102,241,0.1)' : 'transparent',
-                                    border: `1px solid ${isActive ? 'rgba(99,102,241,0.2)' : 'transparent'}`,
-                                    transition: 'all 0.2s var(--ease-out)',
-                                    position: 'relative',
-                                }}
-                                onMouseEnter={(e) => {
-                                    if (!isActive) e.currentTarget.style.background = 'var(--bg-surface-hover)';
-                                }}
-                                onMouseLeave={(e) => {
-                                    if (!isActive) e.currentTarget.style.background = 'transparent';
-                                }}
-                            >
-                                {isActive && (
-                                    <div style={{
-                                        position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)',
-                                        width: 3, height: 20, borderRadius: '0 2px 2px 0',
-                                        background: 'var(--gradient-primary)',
-                                    }}/>
-                                )}
-
-                                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start'}}>
-                                    <div style={{flex: 1, minWidth: 0}}>
-                                        <Text strong style={{
-                                            fontSize: 13,
-                                            color: isActive ? 'var(--text-bright)' : 'var(--text-primary)',
-                                            display: 'block',
-                                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                            marginBottom: 2,
-                                        }}>
-                                            {session.title || '新对话'}
-                                        </Text>
-
-                                        {session.summary && (
-                                            <Text style={{
-                                                fontSize: 12, color: 'var(--text-muted)',
-                                                display: 'block',
-                                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                                marginBottom: 6,
-                                            }}>
-                                                {session.summary}
-                                            </Text>
-                                        )}
-
-                                        <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
-                                            <Space size={3}>
-                                                <ClockCircleOutlined style={{fontSize: 10, color: 'var(--text-muted)'}}/>
-                                                <Text style={{fontSize: 11, color: 'var(--text-muted)'}}>
-                                                    {formatTime(session.updatedAt)}
-                                                </Text>
-                                            </Space>
-                                            <Text style={{fontSize: 11, color: 'var(--text-muted)'}}>
-                                                {session.messageCount} 条
-                                            </Text>
-                                        </div>
-                                    </div>
-
-                                    <Popconfirm
-                                        title="确定删除？"
-                                        onConfirm={(e) => {
-                                            e?.stopPropagation();
-                                            onDeleteSession(session.id);
-                                        }}
-                                        onCancel={(e) => e?.stopPropagation()}
-                                        okText="删除" cancelText="取消"
-                                    >
-                                        <Button
-                                            type="text" size="small"
-                                            icon={<DeleteOutlined/>}
-                                            onClick={(e) => e.stopPropagation()}
-                                            style={{
-                                                color: 'var(--text-muted)',
-                                                opacity: 0.5,
-                                                transition: 'opacity 0.2s',
-                                            }}
-                                            onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
-                                            onMouseLeave={(e) => e.currentTarget.style.opacity = '0.5'}
-                                        />
-                                    </Popconfirm>
-                                </div>
+                    groupedSessions.map((group) => (
+                        <section key={group.key} className={styles.group} aria-label={group.label}>
+                            <div className={styles.groupHeader}>
+                                <span>{group.label}</span>
+                                <span className={styles.groupCount}>{group.items.length}</span>
                             </div>
-                        );
-                    })
+
+                            <div className={styles.groupItems}>
+                                {group.items.map((session) => {
+                                    const isActive = session.id === activeSessionId;
+
+                                    return (
+                                        <div
+                                            key={session.id}
+                                            className={`${styles.item} ${isActive ? styles.itemActive : ''}`}
+                                        >
+                                            <button
+                                                type="button"
+                                                className={styles.itemMain}
+                                                aria-current={isActive ? 'page' : undefined}
+                                                onClick={() => onSelectSession(session.id)}
+                                            >
+                                                <div className={styles.itemTopRow}>
+                                                    <span className={styles.itemTitle}>
+                                                        {session.title || '未命名对话'}
+                                                    </span>
+                                                    <span className={styles.itemTime}>
+                                                        {formatTime(session.updatedAt)}
+                                                    </span>
+                                                </div>
+                                                {session.summary && (
+                                                    <span className={styles.itemSummary}>
+                                                        {session.summary}
+                                                    </span>
+                                                )}
+                                            </button>
+
+                                            <div className={styles.itemFooter}>
+                                                <span className={styles.itemCount}>
+                                                    {session.messageCount} 条消息
+                                                </span>
+
+                                                <button
+                                                    type="button"
+                                                    className={styles.deleteTrigger}
+                                                    aria-label={`删除对话「${session.title || '未命名对话'}」`}
+                                                    title="删除对话"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setPendingDelete(session);
+                                                    }}
+                                                >
+                                                    <DeleteOutlined style={{fontSize: 12}}/>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </section>
+                    ))
                 )}
             </div>
+
+            <ConfirmModal
+                open={pendingDelete !== null}
+                title={`删除对话「${pendingDelete?.title || '未命名对话'}」？`}
+                description="删除后无法恢复该对话的历史消息。"
+                confirmText="删除"
+                cancelText="取消"
+                danger
+                onCancel={() => setPendingDelete(null)}
+                onConfirm={async () => {
+                    if (!pendingDelete) return;
+                    await onDeleteSession(pendingDelete.id);
+                    setPendingDelete(null);
+                }}
+            />
         </div>
     );
 }

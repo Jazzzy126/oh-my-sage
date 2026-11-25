@@ -1,0 +1,1143 @@
+/* 对话区 —— 精工硬件面板设计语言（自动适配明暗模式） */
+
+.container {
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--ui-surface);
+    color: var(--ui-ink);
+}
+
+/* 顶部状态条 */
+.header {
+    height: 46px;
+    padding: 0 20px;
+    border-bottom: 1px solid var(--ui-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+}
+
+.headerLeft {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.assistantTitle {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ui-ink);
+    letter-spacing: -0.01em;
+}
+
+.liveBadge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--ui-muted);
+}
+
+.liveDot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--ui-signal);
+}
+
+.liveDotPulse {
+    animation: chPulse 1.2s ease-in-out infinite;
+}
+
+/* 消息滚动区 */
+.messagesWrap {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.messages {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 24px 20px;
+}
+
+.scrollBottomButton {
+    position: absolute;
+    left: 50%;
+    bottom: 14px;
+    transform: translateX(-50%);
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--ui-border);
+    background: var(--ui-subtle);
+    color: var(--ui-ink);
+    font-size: 12px;
+    font-weight: 500;
+    box-shadow: var(--ui-shadow-toast);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    z-index: 5;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+    animation: chMsgIn 0.15s ease both;
+}
+
+.scrollBottomButton:hover {
+    background: var(--ui-subtle-hover);
+    border-color: var(--ui-border-hover);
+}
+
+.scrollBottomButton:focus-visible {
+    outline: 1px solid var(--ui-focus-border);
+    outline-offset: 2px;
+}
+
+.messages::-webkit-scrollbar {
+    width: 6px;
+}
+
+.messages::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.messages::-webkit-scrollbar-thumb {
+    background: var(--ui-scrollbar);
+    border-radius: var(--radius-md);
+}
+
+.messagesInner {
+    max-width: 760px;
+    margin: 0 auto;
+}
+
+/* 空状态欢迎页（Gemini 风格居中聚焦） */
+.welcomeStage {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 20px 64px;
+}
+
+.welcome {
+    width: 100%;
+    max-width: 720px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.welcomeBadge {
+    margin-bottom: 16px;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: var(--radius-md);
+    background: var(--ui-subtle);
+    border: 1px solid var(--ui-border);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--ui-secondary);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.welcomeBadge strong {
+    color: var(--ui-ink);
+    font-weight: 600;
+}
+
+.hubMetricDot {
+    position: relative;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--ui-online);
+}
+
+.hubMetricDot::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: var(--ui-online);
+    opacity: 0;
+    animation: chRadarPing 3.2s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+    pointer-events: none;
+}
+
+.welcomeTitle {
+    margin: 0 0 28px;
+    font-size: 36px;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    line-height: 1.2;
+    color: var(--ui-ink);
+}
+
+.composerCentered {
+    width: 100%;
+}
+
+.starterChips {
+    margin-top: 16px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.starterChip {
+    height: 34px;
+    padding: 0 12px 0 7px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--ui-border);
+    background: var(--ui-subtle);
+    color: var(--ui-ink);
+    font-size: 13px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+
+.starterChip:hover {
+    background: var(--ui-subtle-hover);
+    border-color: var(--ui-border-hover);
+}
+
+.starterChip:focus-visible {
+    outline: 1px solid var(--ui-focus-border);
+    outline-offset: 2px;
+}
+
+.starterChipIcon {
+    width: 22px;
+    height: 22px;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.starterIconWarm {
+    background: var(--ui-warm-bg);
+    border-color: var(--ui-warm-border);
+    color: var(--ui-warm);
+}
+
+.starterIconSignal {
+    background: var(--ui-signal-tint);
+    border-color: var(--ui-signal-border);
+    color: var(--ui-signal);
+}
+
+.starterIconInfo {
+    background: var(--ui-info-bg);
+    border-color: var(--ui-info-border);
+    color: var(--ui-info);
+}
+
+@media (max-width: 640px) {
+    .welcomeTitle {
+        font-size: 24px;
+        margin-bottom: 22px;
+    }
+}
+
+/* 消息行 */
+.userRow {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 22px;
+    animation: chMsgIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.userBlock {
+    max-width: 80%;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
+
+.userBubble {
+    padding: 10px 14px;
+    border-radius: var(--radius-lg);
+    background: var(--ui-signal-tint);
+    border: 1px solid var(--ui-signal-border);
+    color: var(--ui-ink);
+    font-size: 14px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.resetAction {
+    margin-top: 5px;
+    padding: 2px 6px;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--ui-muted);
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.resetAction:hover {
+    color: var(--ui-ink);
+    background: var(--ui-subtle);
+}
+
+.resetAction:focus-visible {
+    outline: 1px solid var(--ui-focus-border);
+    outline-offset: 1px;
+}
+
+.assistantRow {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 24px;
+    animation: chMsgIn 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.assistantAvatar {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    background: var(--ui-btn-primary);
+    color: var(--ui-btn-primary-text);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.assistantBody {
+    flex: 1;
+    min-width: 0;
+}
+
+.assistantProse {
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--ui-ink);
+    word-break: break-word;
+}
+
+.assistantFooter {
+    margin-top: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.copyAction {
+    padding: 2px 6px;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--ui-muted);
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+}
+
+.assistantRow:hover .copyAction,
+.assistantRow:focus-within .copyAction,
+.copyActionCopied {
+    opacity: 1;
+}
+
+.copyAction:hover {
+    color: var(--ui-ink);
+    background: var(--ui-subtle);
+}
+
+.copyActionCopied {
+    color: var(--ui-signal);
+}
+
+/* Markdown 代码块右上角复制按钮 */
+.codeBlockWrap {
+    position: relative;
+    margin: 10px 0;
+}
+
+.codeBlockWrap pre {
+    margin: 0 !important;
+    padding-top: 34px !important;
+}
+
+.codeCopyButton {
+    position: absolute;
+    top: 7px;
+    right: 8px;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: 5px;
+    border: 1px solid var(--ui-border);
+    background: var(--ui-surface);
+    color: var(--ui-secondary);
+    font-size: 11px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.codeCopyButton:hover {
+    color: var(--ui-ink);
+    border-color: var(--ui-border-hover);
+}
+
+/* 执行过程折叠块 */
+.processBox {
+    position: relative;
+    margin-bottom: 10px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--radius-lg);
+    background: var(--ui-subtle);
+    overflow: hidden;
+}
+
+.processBoxStreaming::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 36%;
+    height: 1px;
+    background: var(--ui-signal);
+    animation: chScanBar 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    pointer-events: none;
+    z-index: 2;
+}
+
+.processSummary {
+    list-style: none;
+    padding: 9px 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--ui-secondary);
+    user-select: none;
+}
+
+.processSummary::-webkit-details-marker {
+    display: none;
+}
+
+.processSummary:hover {
+    background: var(--ui-subtle-hover);
+}
+
+.processChevron {
+    color: var(--ui-muted);
+    transition: transform 0.16s ease;
+    flex-shrink: 0;
+}
+
+.processBox[open] .processChevron {
+    transform: rotate(90deg);
+}
+
+.processTitle {
+    font-weight: 500;
+    color: var(--ui-ink);
+}
+
+.toolChip {
+    height: 20px;
+    padding: 0 7px;
+    border-radius: 5px;
+    font-size: 11px;
+    font-family: var(--font-sans);
+    font-variant-numeric: tabular-nums;
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--ui-border);
+    background: var(--ui-surface);
+    color: var(--ui-secondary);
+    transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+    animation: chChipIn 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.toolChipOk {
+    border-color: var(--ui-signal-border);
+    background: var(--ui-signal-tint);
+    color: var(--ui-signal);
+}
+
+.toolChipErr {
+    border-color: var(--ui-alert-border);
+    background: var(--ui-alert-bg);
+    color: var(--ui-alert);
+}
+
+.processBody {
+    padding: 10px 12px 12px;
+    border-top: 1px solid var(--ui-border);
+    background: var(--ui-surface);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.thinkingBlock {
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--ui-thinking-bg);
+    border: 1px solid var(--ui-thinking-border);
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--ui-thinking-text);
+    white-space: pre-wrap;
+}
+
+.thinkingLabel {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--ui-thinking-label);
+    margin-bottom: 4px;
+}
+
+.toolCard {
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--ui-subtle);
+    border: 1px solid var(--ui-border);
+    font-size: 12px;
+}
+
+.toolCardHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.toolCardName {
+    font-weight: 600;
+    font-family: var(--font-sans);
+    font-variant-numeric: tabular-nums;
+    color: var(--ui-ink);
+}
+
+.toolCardStatus {
+    font-size: 11px;
+    color: var(--ui-muted);
+}
+
+.toolCardStatusOk {
+    color: var(--ui-signal);
+}
+
+.toolCardStatusErr {
+    color: var(--ui-alert);
+}
+
+.toolCode {
+    margin: 4px 0 0;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--ui-surface);
+    border: 1px solid var(--ui-border);
+    font-size: 11px;
+    line-height: 1.5;
+    font-family: var(--font-sans);
+    font-variant-numeric: tabular-nums;
+    color: var(--ui-secondary);
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 160px;
+    overflow: auto;
+}
+
+/* 打字等待态 */
+.typingDots {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 8px 0;
+}
+
+.typingDots span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--ui-signal);
+    animation: chBounce 1.2s ease-in-out infinite;
+}
+
+.typingDots span:nth-child(2) {
+    animation-delay: 0.15s;
+}
+
+.typingDots span:nth-child(3) {
+    animation-delay: 0.3s;
+}
+
+/* 等待用户选择卡片 */
+.optionCard {
+    margin-bottom: 20px;
+    padding: 14px 16px;
+    border-radius: var(--radius-lg);
+    background: var(--ui-signal-tint);
+    border: 1px solid var(--ui-signal-border);
+    animation: chMsgIn 0.15s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.optionTitle {
+    margin: 0 0 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ui-signal-ink);
+}
+
+.optionQuestion {
+    margin-bottom: 12px;
+    font-size: 14px;
+    color: var(--ui-ink);
+}
+
+.optionList {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.optionButton {
+    width: 100%;
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--ui-border-strong);
+    background: var(--ui-surface);
+    color: var(--ui-ink);
+    font-size: 13px;
+    text-align: left;
+    line-height: 1.5;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.optionButton:hover {
+    border-color: var(--ui-signal);
+    background: var(--ui-subtle);
+}
+
+.optionButton:focus-visible {
+    outline: 1px solid var(--ui-focus-border);
+    outline-offset: 2px;
+}
+
+.optionHint {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--ui-secondary);
+}
+
+/* 底部输入区（Gemini 24px 大圆角悬浮卡片） */
+.composerWrap {
+    padding: 8px 20px 14px;
+    background: var(--ui-surface);
+    flex-shrink: 0;
+}
+
+.composerForm {
+    max-width: 760px;
+    margin: 0 auto;
+    text-align: left;
+}
+
+.composerAnchor {
+    position: relative;
+}
+
+.composerBox {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 14px 10px 14px;
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--ui-border);
+    background: var(--ui-subtle);
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.composerBox:focus-within {
+    background: var(--ui-subtle);
+    border-color: var(--ui-focus-border);
+}
+
+.composerToolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.mentionTrigger {
+    height: 28px;
+    padding: 0 9px 0 8px;
+    border-radius: var(--radius-md);
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--ui-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.mentionAt {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ui-signal);
+}
+
+.mentionTrigger:hover:not(:disabled) {
+    background: var(--ui-subtle-hover);
+    border-color: var(--ui-border);
+    color: var(--ui-ink);
+}
+
+.mentionTriggerActive {
+    background: var(--ui-signal-tint);
+    border-color: var(--ui-signal-border);
+    color: var(--ui-signal);
+}
+
+.mentionTrigger:focus-visible {
+    outline: 1px solid var(--ui-focus-border);
+    outline-offset: 1px;
+}
+
+.mentionTrigger:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.mentionPopover {
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + 8px);
+    width: min(400px, 100%);
+    background: var(--ui-surface);
+    border: 1px solid var(--ui-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--ui-shadow-drawer);
+    overflow: hidden;
+    transform-origin: bottom left;
+    z-index: 30;
+    animation: chPopoverIn 0.16s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.mentionHeader {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--ui-border-soft);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.mentionTabs {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.mentionTab {
+    height: 24px;
+    padding: 0 8px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--ui-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+    transition: background-color 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+}
+
+.mentionTab:hover {
+    background: var(--ui-subtle);
+    color: var(--ui-ink);
+}
+
+.mentionTabActive {
+    background: var(--ui-subtle);
+    border-color: var(--ui-border);
+    color: var(--ui-ink);
+}
+
+.mentionTabCount {
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: var(--ui-muted);
+}
+
+.mentionSearchBox {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.mentionSearchIcon {
+    position: absolute;
+    left: 9px;
+    color: var(--ui-muted);
+    pointer-events: none;
+}
+
+.mentionSearchInput {
+    width: 100%;
+    height: 30px;
+    padding: 0 10px 0 28px;
+    border-radius: 7px;
+    border: 1px solid var(--ui-border);
+    background: var(--ui-subtle);
+    color: var(--ui-ink);
+    font-size: 12.5px;
+    outline: none;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.mentionSearchInput::placeholder {
+    color: var(--ui-muted);
+}
+
+.mentionSearchInput:focus {
+    background: var(--ui-surface);
+    border-color: var(--ui-signal);
+}
+
+.mentionList {
+    max-height: 248px;
+    overflow-y: auto;
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.mentionList::-webkit-scrollbar {
+    width: 5px;
+}
+
+.mentionList::-webkit-scrollbar-thumb {
+    background: var(--ui-scrollbar);
+    border-radius: var(--radius-md);
+}
+
+.mentionEmpty {
+    padding: 20px 12px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--ui-muted);
+}
+
+.mentionItem {
+    width: 100%;
+    padding: 7px 9px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--ui-ink);
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.mentionItemActive {
+    background: var(--ui-subtle);
+    border-color: var(--ui-border-soft);
+}
+
+.mentionItemIcon {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    background: var(--ui-subtle);
+    border: 1px solid var(--ui-border-soft);
+    color: var(--ui-secondary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.mentionItemActive .mentionItemIcon {
+    background: var(--ui-surface);
+    color: var(--ui-signal);
+    border-color: var(--ui-signal-border);
+}
+
+.mentionItemMain {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.mentionItemTitle {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ui-ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mentionItemMeta {
+    font-size: 11px;
+    color: var(--ui-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mentionStatusDot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--ui-offline);
+    flex-shrink: 0;
+}
+
+.mentionStatusDotOn {
+    background: var(--ui-signal);
+}
+
+.textarea {
+    width: 100%;
+    min-height: 26px;
+    max-height: 152px;
+    padding: 2px 4px 0 0;
+    border: none;
+    background: transparent;
+    color: var(--ui-ink);
+    font-family: inherit;
+    font-size: 14.5px;
+    line-height: 1.55;
+    resize: none;
+    outline: none;
+}
+
+.textarea::placeholder {
+    color: var(--ui-muted);
+}
+
+.textarea:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.sendButton,
+.stopButton {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: var(--radius-md);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background-color 0.15s ease, opacity 0.15s ease;
+}
+
+.stopSquare {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    background: currentColor;
+}
+
+.sendButton {
+    border: none;
+    background: var(--ui-btn-primary);
+    color: var(--ui-btn-primary-text);
+}
+
+.sendButton:hover:not(:disabled) {
+    opacity: 0.9;
+}
+
+.sendButton:disabled {
+    background: var(--ui-btn-disabled-bg);
+    color: var(--ui-btn-disabled-text);
+    cursor: not-allowed;
+}
+
+.stopButton {
+    border: 1px solid var(--ui-alert-border);
+    background: var(--ui-alert-bg);
+    color: var(--ui-alert);
+}
+
+.stopButton:hover {
+    opacity: 0.88;
+}
+
+.sendButton:focus-visible,
+.stopButton:focus-visible {
+    outline: 1px solid var(--ui-focus-border);
+    outline-offset: 2px;
+}
+
+.composerHint {
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--ui-muted);
+    text-align: right;
+}
+
+.spinner {
+    width: 12px;
+    height: 12px;
+    border: 1.75px solid var(--ui-signal-soft);
+    border-top-color: var(--ui-signal);
+    border-radius: 50%;
+    animation: chSpin 0.75s linear infinite;
+    flex-shrink: 0;
+}
+
+@keyframes chSpin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes chPulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.35;
+    }
+}
+
+@keyframes chBounce {
+    0%, 60%, 100% {
+        transform: translateY(0);
+        opacity: 0.35;
+    }
+    30% {
+        transform: translateY(-4px);
+        opacity: 1;
+    }
+}
+
+@keyframes chMsgIn {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes chPopoverIn {
+    from {
+        opacity: 0;
+        transform: translateY();
+    }
+    to {
+        opacity: 1;
+        transform: translateY();
+    }
+}
+
+@keyframes chChipIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes chScanBar {
+    0% {
+        transform: translateX(-100%);
+    }
+    100% {
+        transform: translateX(340%);
+    }
+}
+
+@keyframes chRadarPing {
+    0% {
+        opacity: 0.45;
+    }
+    55%, 100% {
+        opacity: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .liveDotPulse,
+    .typingDots span,
+    .hubMetricDot::after,
+    .processBoxStreaming::before,
+    .toolChip,
+    .mentionPopover,
+    .spinner,
+    .userRow,
+    .assistantRow,
+    .optionCard {
+        animation: none;
+    }
+
+    .sendButton,
+    .stopButton,
+    .mentionTrigger,
+    .starterChip {
+        transition: none;
+    }
+}

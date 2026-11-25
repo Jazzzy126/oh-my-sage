@@ -95,7 +95,36 @@ function defineTool<P extends z.Schema<any, z.ZodTypeDef, any>, RESULT>(config: 
     } as any);
 }
 
-export function createCoreTools(gateway: GatewayClient) {
+// ==================== 规则写入确认守卫 ====================
+
+export interface CoreToolsOptions {
+    /**
+     * 判断当前轮次是否已获用户确认、允许执行规则写入操作（创建/修改/删除规则）。
+     * 未提供时默认允许（兼容直接单测工具的场景）。
+     */
+    canMutateGraph?: () => boolean;
+    /**
+     * 调用 ask_user 时触发，用于立即收回本轮规则写权限，防止同一步并行偷跑。
+     */
+    onAskUser?: () => void;
+}
+
+function guardGraphMutation(
+    options: CoreToolsOptions | undefined,
+    actionLabel: string
+): { success: false; blocked: true; requiresConfirmation: true; error: string } | null {
+    if (!options?.canMutateGraph || options.canMutateGraph()) {
+        return null;
+    }
+    return {
+        success: false,
+        blocked: true,
+        requiresConfirmation: true,
+        error: `尚未获得用户确认，已拦截「${actionLabel}」操作。请先向用户清晰说明拟执行的方案（触发条件、判断逻辑、执行动作或变更内容），并调用 ask_user 提供确认选项，待用户回复确认后再执行写入。`,
+    };
+}
+
+export function createCoreTools(gateway: GatewayClient, options?: CoreToolsOptions) {
     return {
         think: defineTool({
             description: '仅用于复杂任务的思考（如创建规则）。简单任务（查询设备、查看规则等）不要使用此工具，直接调用相应工具即可。',
@@ -113,18 +142,22 @@ export function createCoreTools(gateway: GatewayClient) {
         }),
 
         ask_user: defineTool({
-            description: '仅用于需要用户选择或确认时。简单任务不要使用。',
+            description: '向用户展示方案并等待选择或确认。创建、修改、删除自动化规则前必须先调用此工具获得用户确认；简单查询任务不要使用。',
             parameters: z.object({
-                question: z.string().describe('问题内容'),
-                options: z.array(z.string()).describe('选项列表'),
+                question: z.string().describe('问题或方案说明内容'),
+                options: z.array(z.string()).min(1).describe('供用户选择的选项列表，至少包含 1 个选项'),
                 needConfirm: z.boolean().optional().describe('是否需要确认'),
             }),
-            execute: async ({question, options, needConfirm}) => {
+            execute: async ({question, options: userOptions, needConfirm}) => {
+                options?.onAskUser?.();
+                const normalizedOptions = Array.isArray(userOptions) && userOptions.length > 0
+                    ? userOptions
+                    : ['确认执行', '取消'];
                 return {
                     success: true,
                     needsUserInput: true,
                     question,
-                    options,
+                    options: normalizedOptions,
                     needConfirm,
                 };
             },
@@ -192,7 +225,7 @@ export function createCoreTools(gateway: GatewayClient) {
         }),
 
         patch_graph: defineTool({
-            description: `修改已有规则的首选方式：一次调用完成建变量、改节点、改备注、结构与能力校验和写入。先用 get_graph({id, format:"text"}) 拿到 hash。
+            description: `【需用户确认】修改已有规则的首选方式（非 dryRun 写入前必须先经 ask_user 获得用户确认；dryRun:true 预览可直接调用）：一次调用完成建变量、改节点、改备注、结构与能力校验和写入。先用 get_graph({id, format:"text"}) 拿到 hash。
 - add: 新增节点（紧凑文本，可多行，可含 var 声明和 @tts/@pulse 宏）；ID 已存在时拒绝
 - replace: 整行替换已有节点（紧凑文本）；ID 不存在时拒绝
 - merge: 只改个别字段或连线（outputs 按端口整体替换）；removeIds: 删除节点并清理连线
@@ -220,6 +253,10 @@ export function createCoreTools(gateway: GatewayClient) {
                 enable: z.boolean().optional().describe('是否启用'),
             }),
             execute: async ({id, name, enable, variables, ...patch}) => {
+                if (!patch.dryRun) {
+                    const blocked = guardGraphMutation(options, '修改规则');
+                    if (blocked) return blocked;
+                }
                 for (const variable of variables || []) {
                     if (typeof variable.value !== variable.type) return {success: false, error: `变量 ${variable.id} 的初始值类型必须是 ${variable.type}`};
                 }
@@ -240,7 +277,7 @@ export function createCoreTools(gateway: GatewayClient) {
         }),
 
         put_graph_text: defineTool({
-            description: '用一份完整的紧凑文本（get_graph format="text" 的格式）替换规则内容。服务端按差异计算新增/修改/删除、创建 var 声明的变量、执行两项校验、保留卡片坐标并给新卡片找空位后写入。改动很大、patch_graph 不方便表达时使用。必须传 baseHash。',
+            description: '【需用户确认】用一份完整的紧凑文本（get_graph format="text" 的格式）替换规则内容（非 dryRun 写入前必须先经 ask_user 获得用户确认）。服务端按差异计算新增/修改/删除、创建 var 声明的变量、执行两项校验、保留卡片坐标并给新卡片找空位后写入。改动很大、patch_graph 不方便表达时使用。必须传 baseHash。',
             parameters: z.object({
                 id: z.string().describe('规则ID'),
                 baseHash: z.string().describe('读取文本时的 hash'),
@@ -249,7 +286,13 @@ export function createCoreTools(gateway: GatewayClient) {
                 layout: layoutOptionsSchema.optional().describe('布局方式，默认只摆放新卡片'),
                 dryRun: z.boolean().optional().describe('只预览，不写入'),
             }),
-            execute: async ({id, ...input}) => putGraphText(gateway, id, input),
+            execute: async ({id, ...input}) => {
+                if (!input.dryRun) {
+                    const blocked = guardGraphMutation(options, '替换规则文本');
+                    if (blocked) return blocked;
+                }
+                return putGraphText(gateway, id, input);
+            },
         }),
 
         query_rules: defineTool({
@@ -289,7 +332,7 @@ export function createCoreTools(gateway: GatewayClient) {
         }),
 
         create_graph: defineTool({
-            description: '创建新的自动化规则',
+            description: '【需用户确认】创建新的自动化规则。调用前必须先向用户展示方案并通过 ask_user 获得确认，未经确认调用会被拦截。',
             parameters: z.object({
                 name: z.string().describe('规则名称'),
                 nodes: z.array(z.any()).describe('节点列表'),
@@ -300,12 +343,14 @@ export function createCoreTools(gateway: GatewayClient) {
                 enable: z.boolean().optional().describe('是否启用'),
             }),
             execute: async ({name, nodes, variables, enable = true}) => {
+                const blocked = guardGraphMutation(options, '创建规则');
+                if (blocked) return blocked;
                 return createGraph(gateway, {name, nodes, variables, enable});
             },
         }),
 
         update_graph: defineTool({
-            description: '整图替换现有规则（需要传全部节点）。修改已有规则优先用 patch_graph，只在补丁无法表达时使用。',
+            description: '【需用户确认】整图替换现有规则（需要传全部节点）。调用前必须先经 ask_user 获得用户确认。修改已有规则优先用 patch_graph，只在补丁无法表达时使用。',
             parameters: z.object({
                 id: z.string().describe('规则ID'),
                 name: z.string().optional().describe('新规则名称'),
@@ -313,16 +358,20 @@ export function createCoreTools(gateway: GatewayClient) {
                 enable: z.boolean().optional().describe('是否启用'),
             }),
             execute: async ({id, name, nodes, enable}) => {
+                const blocked = guardGraphMutation(options, '更新规则');
+                if (blocked) return blocked;
                 return updateGraph(gateway, id, {name, nodes, enable});
             },
         }),
 
         delete_graph: defineTool({
-            description: '删除指定的自动化规则',
+            description: '【需用户确认】删除指定的自动化规则。调用前必须先向用户说明待删除规则并通过 ask_user 获得确认。',
             parameters: z.object({
                 id: z.string().describe('规则ID'),
             }),
             execute: async ({id}) => {
+                const blocked = guardGraphMutation(options, '删除规则');
+                if (blocked) return blocked;
                 return deleteGraph(gateway, id);
             },
         }),

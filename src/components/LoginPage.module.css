@@ -1,0 +1,733 @@
+/* 登录页 —— Linear 风格极简深色面板 */
+
+.page {
+    min-height: 100vh;
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.88fr);
+    background: var(--ui-surface);
+    color: var(--ui-ink);
+    font-family: var(--font-sans);
+    letter-spacing: -0.011em;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* 左侧：主交互工作区 */
+.workspace {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 40px clamp(28px, 6vw, 88px);
+    background: var(--ui-surface);
+}
+
+.topBar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--ui-ink);
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    user-select: none;
+}
+
+.brandMark {
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-md);
+    background: var(--ui-subtle);
+    border: 1px solid var(--ui-border);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.themeToggle {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-md);
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--ui-secondary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.themeToggle:hover {
+    background: var(--ui-subtle-hover);
+    border-color: var(--ui-border);
+    color: var(--ui-ink);
+}
+
+.themeToggle:focus-visible {
+    outline: 1px solid var(--ui-focus-border);
+    outline-offset: 2px;
+}
+
+.formColumn {
+    width: 100%;
+    max-width: 404px;
+    margin: auto 0;
+    padding: 32px 0;
+    animation: loginReveal 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.securityPill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 24px;
+    padding: 0 9px;
+    margin-bottom: 18px;
+    border-radius: 6px;
+    background: var(--ui-subtle);
+    border: 1px solid var(--ui-border);
+    color: var(--ui-muted);
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.heading {
+    margin: 0 0 12px;
+    font-size: 36px;
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.025em;
+    color: var(--ui-ink);
+}
+
+.lead {
+    margin: 0 0 36px;
+    font-size: 14px;
+    line-height: 1.65;
+    color: var(--ui-secondary);
+    max-width: 36ch;
+}
+
+/* 6 位分段数字槽 */
+.passcodeField {
+    margin-bottom: 20px;
+}
+
+.passcodeLabelRow {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.passcodeLabel {
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--ui-muted);
+}
+
+.clearButton {
+    background: none;
+    border: none;
+    padding: 2px 6px;
+    font-size: 12px;
+    color: var(--ui-muted);
+    cursor: pointer;
+    border-radius: 4px;
+    transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.clearButton:hover:not(:disabled) {
+    color: var(--ui-ink);
+    background: var(--ui-subtle-hover);
+}
+
+.clearButton:focus-visible {
+    outline: 1px solid var(--ui-focus-border);
+    outline-offset: 2px;
+}
+
+.clearButton:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.digitRow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.digitRowShake {
+    animation: digitShake 0.36s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+.digitGroup {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    flex: 1;
+}
+
+.digitSeparator {
+    width: 10px;
+    height: 1px;
+    background: var(--ui-border-strong);
+    flex-shrink: 0;
+    transition: background-color 0.15s ease;
+}
+
+.digitSeparatorActive {
+    background: var(--ui-signal);
+}
+
+.digitInput {
+    width: 100%;
+    height: 58px;
+    border: 1px solid var(--ui-border);
+    border-radius: 10px;
+    background: var(--ui-subtle);
+    color: var(--ui-ink);
+    font-family: var(--font-sans);
+    font-size: 24px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    caret-color: var(--ui-signal);
+    outline: none;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.digitInput:hover:not(:disabled) {
+    border-color: var(--ui-border-hover);
+    background: var(--ui-subtle-hover);
+}
+
+.digitInput:focus {
+    border-color: var(--ui-focus-border);
+    background: var(--ui-subtle);
+}
+
+.digitInputFilled {
+    background: var(--ui-subtle);
+    border-color: var(--ui-border-hover);
+}
+
+.digitInputConnecting {
+    border-color: var(--ui-signal-border);
+    background: var(--ui-signal-tint);
+    color: var(--ui-ink);
+    animation: digitWave 1.1s ease-in-out infinite;
+}
+
+.digitInputConnected {
+    border-color: var(--ui-signal);
+    background: var(--ui-signal-tint);
+    color: var(--ui-ink);
+}
+
+.digitInputError {
+    border-color: var(--ui-alert-border);
+    background: var(--ui-alert-bg);
+}
+
+.digitInputError:focus {
+    border-color: var(--ui-alert);
+}
+
+.digitInput:disabled {
+    opacity: 0.75;
+    cursor: not-allowed;
+}
+
+/* 错误反馈条 */
+.errorBox {
+    margin: 0 0 20px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--ui-alert-border);
+    background: var(--ui-alert-bg);
+    color: var(--ui-alert);
+    font-size: 13px;
+    line-height: 1.55;
+}
+
+.errorTitle {
+    font-weight: 600;
+    margin-bottom: 2px;
+}
+
+.errorHint {
+    color: var(--ui-alert-hint);
+    font-size: 12px;
+}
+
+/* 主按钮 */
+.submitButton {
+    position: relative;
+    overflow: hidden;
+    width: 100%;
+    height: 44px;
+    border: none;
+    border-radius: 10px;
+    background: var(--ui-btn-primary);
+    color: var(--ui-btn-primary-text);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.submitButton:hover:not(:disabled) {
+    opacity: 0.9;
+}
+
+.submitButton:focus-visible {
+    outline: 1px solid var(--ui-focus-border);
+    outline-offset: 2px;
+}
+
+.submitButton:disabled {
+    background: var(--ui-btn-disabled-bg);
+    color: var(--ui-btn-disabled-text);
+    border: 1px solid var(--ui-border-soft);
+    cursor: not-allowed;
+}
+
+.submitButtonConnecting,
+.submitButtonConnected {
+    background: var(--ui-signal) !important;
+    color: #ffffff !important;
+    cursor: default;
+}
+
+.spinner {
+    width: 14px;
+    height: 14px;
+    border: 1.5px solid rgba(255, 255, 255, 0.3);
+    border-top-color: #ffffff;
+    border-radius: 50%;
+    animation: spin 0.75s linear infinite;
+}
+
+.helperRow {
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--ui-muted);
+    line-height: 1.5;
+}
+
+/* 底部折叠帮助 */
+.helpDetails {
+    margin-top: 32px;
+    border-top: 1px solid var(--ui-border);
+    padding-top: 16px;
+}
+
+.helpSummary {
+    list-style: none;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ui-secondary);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    user-select: none;
+    transition: color 0.15s ease;
+}
+
+.helpSummary::-webkit-details-marker {
+    display: none;
+}
+
+.helpSummary:hover {
+    color: var(--ui-ink);
+}
+
+.helpSummary:focus-visible {
+    outline: 1px solid var(--ui-focus-border);
+    outline-offset: 3px;
+    border-radius: 4px;
+}
+
+.helpChevron {
+    transition: transform 0.15s ease;
+    color: var(--ui-muted);
+}
+
+.helpDetails[open] .helpChevron {
+    transform: rotate(90deg);
+}
+
+.helpSteps {
+    margin: 12px 0 0;
+    padding-left: 18px;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--ui-secondary);
+}
+
+.helpSteps li + li {
+    margin-top: 4px;
+}
+
+.helpCode {
+    font-family: var(--font-sans);
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: var(--ui-subtle);
+    border: 1px solid var(--ui-border);
+    color: var(--ui-ink);
+}
+
+.footer {
+    font-size: 12px;
+    color: var(--ui-muted);
+}
+
+/* 右侧：硬件拓扑视觉面板（无渐变光斑/点阵） */
+.stage {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 40px;
+    background-color: var(--ui-stage);
+    border-left: 1px solid var(--ui-border);
+    overflow: hidden;
+}
+
+.stageConnecting,
+.stageConnected,
+.stageError {
+    /* 状态由内部 SVG 与 statusCard 体现 */
+}
+
+.stageContent {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    max-width: 344px;
+}
+
+.hubStageWrap {
+    width: 100%;
+    max-width: 288px;
+}
+
+.hubDiagram {
+    width: 100%;
+    height: auto;
+    display: block;
+    overflow: visible;
+}
+
+.hubBody,
+.hubHalo {
+    transition: fill 0.15s ease, stroke 0.15s ease;
+}
+
+.orbitSpinSlow {
+    transform-origin: 140px 140px;
+    animation: spin 16s linear infinite;
+}
+
+.arcGroupSpin {
+    transform-origin: 140px 140px;
+    animation: spin 3.2s linear infinite;
+}
+
+.arcSegment {
+    transition: stroke 0.15s ease, opacity 0.15s ease, stroke-width 0.15s ease;
+}
+
+.arcSegmentPulse {
+    animation: arcFlow 0.9s ease-in-out infinite;
+}
+
+.rippleGroup {
+    pointer-events: none;
+}
+
+.rippleWave {
+    transform-origin: 140px 140px;
+    opacity: 0;
+    animation: hubRipple 2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+.rippleWaveDelay {
+    animation-delay: 1s;
+}
+
+.successRing {
+    transform-origin: 140px 140px;
+    animation: successRingIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.checkDraw {
+    stroke-dasharray: 32;
+    stroke-dashoffset: 32;
+    animation: drawCheck 0.28s cubic-bezier(0.22, 1, 0.36, 1) 0.05s forwards;
+}
+
+.ledPulse {
+    transform-origin: 140px 144px;
+    animation: ledBreath 1.2s ease-in-out infinite;
+}
+
+.stageCard {
+    margin-top: 28px;
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: var(--radius-lg);
+    background: var(--ui-subtle);
+    border: 1px solid var(--ui-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.statusIndicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ui-ink);
+}
+
+.statusDot {
+    position: relative;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--ui-hub-led-idle);
+    flex-shrink: 0;
+    transition: background-color 0.15s ease;
+}
+
+.statusDotActive,
+.statusDotConnecting {
+    background: var(--ui-signal);
+}
+
+.statusDotConnecting::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: var(--ui-signal);
+    animation: dotPing 1.4s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.statusDotError {
+    background: var(--ui-alert);
+}
+
+.statusPips {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+}
+
+.statusPip {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--ui-border-strong);
+    transition: background-color 0.15s ease;
+}
+
+.statusPipLit {
+    background: var(--ui-signal);
+}
+
+.statusPipError {
+    background: var(--ui-alert);
+}
+
+/* 动画 */
+@keyframes loginReveal {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes digitWave {
+    0%, 100% {
+        border-color: var(--ui-signal-border);
+    }
+    50% {
+        border-color: var(--ui-signal);
+    }
+}
+
+@keyframes digitShake {
+    0%, 100% {
+        transform: translateX(0);
+    }
+    20%, 60% {
+        transform: translateX(-4px);
+    }
+    40%, 80% {
+        transform: translateX(4px);
+    }
+}
+
+@keyframes hubRipple {
+    0% {
+        transform: scale(0.95);
+        opacity: 0.45;
+    }
+    100% {
+        transform: scale(1.75);
+        opacity: 0;
+    }
+}
+
+@keyframes arcFlow {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.35;
+    }
+}
+
+@keyframes successRingIn {
+    0% {
+        opacity: 0;
+    }
+    100% {
+        opacity: 0.65;
+    }
+}
+
+@keyframes drawCheck {
+    to {
+        stroke-dashoffset: 0;
+    }
+}
+
+@keyframes ledBreath {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.35;
+    }
+}
+
+@keyframes dotPing {
+    0% {
+        transform: scale(1);
+        opacity: 0.5;
+    }
+    100% {
+        transform: scale(2.4);
+        opacity: 0;
+    }
+}
+
+/* 响应式 */
+@media (max-width: 900px) {
+    .page {
+        grid-template-columns: 1fr;
+    }
+
+    .stage {
+        display: none;
+    }
+
+    .workspace {
+        min-height: 100vh;
+        padding: 28px 24px;
+    }
+
+    .formColumn {
+        margin: auto;
+        padding: 24px 0;
+    }
+}
+
+@media (max-width: 440px) {
+    .digitRow {
+        gap: 6px;
+    }
+
+    .digitGroup {
+        gap: 6px;
+    }
+
+    .digitInput {
+        height: 52px;
+        font-size: 20px;
+        border-radius: 6px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .formColumn,
+    .spinner,
+    .ledPulse,
+    .orbitSpinSlow,
+    .arcGroupSpin,
+    .arcSegmentPulse,
+    .rippleWave,
+    .digitInputConnecting,
+    .digitRowShake,
+    .statusDotConnecting::after,
+    .successRing,
+    .checkDraw {
+        animation: none;
+    }
+
+    .checkDraw {
+        stroke-dashoffset: 0;
+    }
+
+    .digitInput,
+    .submitButton,
+    .arcSegment,
+    .helpChevron {
+        transition: none;
+    }
+}

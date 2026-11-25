@@ -1,0 +1,134 @@
+.backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    background: var(--ui-backdrop);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    animation: cmFadeIn 0.15s ease;
+}
+
+.modal {
+    width: 100%;
+    max-width: 396px;
+    padding: 20px;
+    border-radius: var(--radius-lg);
+    background: var(--ui-surface);
+    border: 1px solid var(--ui-border);
+    box-shadow: var(--ui-shadow-drawer);
+    color: var(--ui-ink);
+    font-family: var(--font-sans);
+    letter-spacing: -0.011em;
+    animation: cmModalIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--ui-ink);
+    word-break: break-word;
+}
+
+.description {
+    margin: 8px 0 0;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--ui-secondary);
+}
+
+.actions {
+    margin-top: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.cancelButton,
+.confirmButton {
+    height: 34px;
+    padding: 0 14px;
+    border-radius: var(--radius-md);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+
+.cancelButton {
+    border: 1px solid var(--ui-border);
+    background: var(--ui-subtle);
+    color: var(--ui-ink);
+}
+
+.cancelButton:hover:not(:disabled) {
+    background: var(--ui-subtle-hover);
+    border-color: var(--ui-border-hover);
+}
+
+.confirmButton {
+    border: none;
+    background: var(--ui-btn-primary);
+    color: var(--ui-btn-primary-text);
+}
+
+.confirmButton:hover:not(:disabled) {
+    opacity: 0.9;
+}
+
+.confirmDanger {
+    background: var(--ui-alert);
+    color: #ffffff;
+}
+
+.confirmDanger:hover:not(:disabled) {
+    background: var(--ui-alert-hover);
+    opacity: 1;
+}
+
+.cancelButton:focus-visible,
+.confirmButton:focus-visible {
+    outline: 1px solid var(--ui-focus-border);
+    outline-offset: 2px;
+}
+
+.cancelButton:disabled,
+.confirmButton:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+@keyframes cmFadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes cmModalIn {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .backdrop,
+    .modal {
+        animation: none;
+    }
+}

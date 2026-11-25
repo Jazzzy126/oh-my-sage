@@ -1,0 +1,745 @@
+/* 设备列表面板 —— 精工硬件面板设计语言（自动适配明暗模式） */
+
+.panel {
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--ui-surface);
+    color: var(--ui-ink);
+}
+
+.topBar {
+    height: 46px;
+    padding: 0 20px;
+    border-bottom: 1px solid var(--ui-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-shrink: 0;
+}
+
+.topBarTitleGroup {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.topBarTitle {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ui-ink);
+    letter-spacing: -0.01em;
+}
+
+.topBarCount {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--ui-muted);
+}
+
+.toolbar {
+    width: 100%;
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 16px 24px 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-shrink: 0;
+}
+
+.filterPills {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.filterPill {
+    height: 24px;
+    padding: 0 8px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--ui-secondary);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.filterPill:hover {
+    background: var(--ui-subtle);
+    color: var(--ui-ink);
+}
+
+.filterPillActive {
+    background: var(--ui-subtle);
+    border-color: var(--ui-border);
+    color: var(--ui-ink);
+    font-weight: 500;
+}
+
+.filterPill:focus-visible {
+    outline: 1px solid var(--ui-focus-border);
+    outline-offset: 1px;
+}
+
+.dotOnline {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--ui-online);
+}
+
+.dotOffline {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--ui-offline);
+    flex-shrink: 0;
+}
+
+.headerActions {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+}
+
+.refreshButton {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--ui-secondary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background-color 0.16s ease, color 0.16s ease, border-color 0.16s ease;
+}
+
+.refreshButton:hover:not(:disabled) {
+    background: var(--ui-subtle);
+    border-color: var(--ui-border);
+    color: var(--ui-ink);
+}
+
+.refreshButton:focus-visible {
+    outline: 1px solid var(--ui-focus-border);
+    outline-offset: 2px;
+}
+
+.refreshButton:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.spinning {
+    animation: dpSpin 0.8s linear infinite;
+}
+
+/* 搜索框 */
+.searchBox {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    max-width: 280px;
+}
+
+.searchIcon {
+    position: absolute;
+    left: 10px;
+    color: var(--ui-muted);
+    pointer-events: none;
+    display: inline-flex;
+}
+
+.searchInput {
+    width: 100%;
+    height: 34px;
+    padding: 0 30px 0 32px;
+    border-radius: 8px;
+    border: 1px solid var(--ui-border);
+    background: var(--ui-subtle);
+    color: var(--ui-ink);
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.searchInput::placeholder {
+    color: var(--ui-muted);
+}
+
+.searchInput:hover {
+    border-color: var(--ui-border-hover);
+}
+
+.searchInput:focus {
+    background: var(--ui-surface);
+    border-color: var(--ui-focus-border);
+}
+
+.clearSearch {
+    position: absolute;
+    right: 6px;
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--ui-muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.clearSearch:hover {
+    background: var(--ui-subtle-hover);
+    color: var(--ui-ink);
+}
+
+/* 列表区 */
+.list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 16px 24px 28px;
+}
+
+.roomsWrap {
+    width: 100%;
+    max-width: 1080px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.list::-webkit-scrollbar-thumb {
+    background: var(--ui-scrollbar);
+    border-radius: var(--radius-md);
+}
+
+/* 房间折叠组 */
+.roomGroup {
+    border: 1px solid var(--ui-border);
+    border-radius: var(--radius-lg);
+    background: var(--ui-surface);
+    box-shadow: var(--ui-shadow-card);
+    overflow: hidden;
+}
+
+.roomHeader {
+    width: 100%;
+    padding: 11px 14px;
+    border: none;
+    background: transparent;
+    color: var(--ui-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    cursor: pointer;
+    text-align: left;
+    transition: background-color 0.14s ease, color 0.14s ease;
+}
+
+.roomHeader:hover {
+    background: var(--ui-subtle);
+    color: var(--ui-ink);
+}
+
+.roomHeader:focus-visible {
+    outline: 1px solid var(--ui-focus-border);
+    outline-offset: -2px;
+}
+
+.roomTitleWrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.chevron {
+    color: var(--ui-muted);
+    transition: transform 0.16s ease;
+    flex-shrink: 0;
+}
+
+.chevronOpen {
+    transform: rotate(90deg);
+}
+
+.roomName {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ui-ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.roomCount {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--ui-muted);
+    flex-shrink: 0;
+}
+
+.deviceListWrap {
+    display: grid;
+    grid-template-rows: 1fr;
+    opacity: 1;
+    border-top: 1px solid var(--ui-border-soft);
+    transition: grid-template-rows 0.22s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.18s ease, border-color 0.18s ease;
+}
+
+.deviceListWrapCollapsed {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    border-top-color: transparent;
+}
+
+.deviceListInner {
+    overflow: hidden;
+}
+
+.deviceList {
+    padding: 10px 12px 12px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 8px;
+}
+
+.deviceRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 9px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--ui-border-soft);
+    background: var(--ui-subtle);
+    transition: background-color 0.14s ease, border-color 0.14s ease;
+}
+
+.deviceRow:hover {
+    background: var(--ui-subtle-hover);
+    border-color: var(--ui-border);
+}
+
+.deviceMain {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+    flex: 1;
+    border: none;
+    background: transparent;
+    padding: 0;
+    text-align: left;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+}
+
+.deviceMain:focus-visible {
+    outline: 1px solid var(--ui-focus-border);
+    outline-offset: 2px;
+    border-radius: 5px;
+}
+
+.deviceRight {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.insertTrigger {
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    border: none;
+    background: transparent;
+    color: var(--ui-muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+.deviceRow:hover .insertTrigger,
+.deviceRow:focus-within .insertTrigger {
+    opacity: 1;
+}
+
+.insertTrigger:hover {
+    background: var(--ui-signal-tint);
+    color: var(--ui-signal);
+}
+
+.insertTrigger:focus-visible {
+    opacity: 1;
+    outline: 1px solid var(--ui-focus-border);
+    outline-offset: 1px;
+}
+
+.deviceIcon {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    background: var(--ui-surface);
+    border: 1px solid var(--ui-border);
+    color: var(--ui-secondary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.deviceIconWarm {
+    background: var(--ui-warm-bg);
+    border-color: var(--ui-warm-border);
+    color: var(--ui-warm);
+}
+
+.deviceIconSignal {
+    background: var(--ui-signal-tint);
+    border-color: var(--ui-signal-border);
+    color: var(--ui-signal);
+}
+
+.deviceIconInfo {
+    background: var(--ui-info-bg);
+    border-color: var(--ui-info-border);
+    color: var(--ui-info);
+}
+
+.deviceIconMedia {
+    background: var(--ui-media-bg);
+    border-color: var(--ui-media-border);
+    color: var(--ui-media);
+}
+
+.deviceRowOffline .deviceIcon {
+    color: var(--ui-offline);
+}
+
+.deviceName {
+    font-size: 13px;
+    color: var(--ui-ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.deviceRowOffline .deviceName {
+    color: var(--ui-muted);
+}
+
+.deviceStatus {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--ui-muted);
+    flex-shrink: 0;
+}
+
+.deviceStatusOnline {
+    color: var(--ui-signal);
+}
+
+/* 骨架与空态 */
+.skeletonList {
+    padding: 8px 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.skeletonRow {
+    height: 36px;
+    border-radius: 7px;
+    background: var(--ui-subtle);
+    animation: dpPulse 1.4s ease-in-out infinite;
+}
+
+.emptyState {
+    padding: 36px 12px;
+}
+
+.emptyTitle {
+    margin: 0 0 4px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ui-ink);
+}
+
+.emptyDesc {
+    margin: 0 0 14px;
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--ui-secondary);
+}
+
+.resetButton {
+    height: 30px;
+    padding: 0 11px;
+    border-radius: 7px;
+    border: 1px solid var(--ui-border-strong);
+    background: var(--ui-surface);
+    color: var(--ui-ink);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.resetButton:hover {
+    background: var(--ui-subtle);
+}
+
+/* 设备详情弹窗 */
+.modalBackdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(16, 20, 24, 0.48);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    animation: dpFadeIn 0.16s ease;
+}
+
+.modal {
+    width: 100%;
+    max-width: 440px;
+    background: var(--ui-surface);
+    border: 1px solid var(--ui-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--ui-shadow-drawer);
+    overflow: hidden;
+    color: var(--ui-ink);
+    animation: dpModalIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.modalHeader {
+    padding: 16px 18px 14px;
+    border-bottom: 1px solid var(--ui-border);
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.modalTitleRow {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+}
+
+.modalTitle {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ui-ink);
+    word-break: break-word;
+}
+
+.closeButton {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--ui-secondary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.closeButton:hover {
+    background: var(--ui-subtle);
+    border-color: var(--ui-border-soft);
+    color: var(--ui-ink);
+}
+
+.modalBody {
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.detailRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--ui-subtle);
+    font-size: 12px;
+}
+
+.detailLabel {
+    color: var(--ui-muted);
+    flex-shrink: 0;
+}
+
+.detailValue {
+    color: var(--ui-ink);
+    font-weight: 500;
+    text-align: right;
+    word-break: break-all;
+}
+
+.detailMono {
+    font-family: var(--font-sans);
+    font-variant-numeric: tabular-nums;
+    font-size: 11.5px;
+}
+
+.modalFooter {
+    padding: 12px 18px;
+    border-top: 1px solid var(--ui-border);
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.modalSecondaryBtn,
+.modalPrimaryBtn {
+    height: 32px;
+    padding: 0 13px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+
+.modalSecondaryBtn {
+    border: 1px solid var(--ui-border-strong);
+    background: var(--ui-surface);
+    color: var(--ui-ink);
+}
+
+.modalSecondaryBtn:hover {
+    background: var(--ui-subtle);
+}
+
+.modalPrimaryBtn {
+    border: none;
+    background: var(--ui-btn-primary);
+    color: var(--ui-btn-primary-text);
+}
+
+.modalPrimaryBtn:hover {
+    background: var(--ui-btn-primary-hover);
+}
+
+@keyframes dpFadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes dpModalIn {
+    from {
+        opacity: 0;
+        transform: translateY();
+    }
+    to {
+        opacity: 1;
+        transform: translateY();
+    }
+}
+
+@media (max-width: 640px) {
+    .topBar {
+        padding: 0 14px;
+    }
+
+    .toolbar {
+        padding: 12px 14px 0;
+    }
+
+    .searchBox {
+        max-width: 100%;
+    }
+
+    .list {
+        padding: 12px 14px 20px;
+    }
+}
+
+@media (hover: none) {
+    .insertTrigger {
+        opacity: 0.8;
+    }
+}
+
+@keyframes dpSpin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes dpPulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.45;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .spinning,
+    .skeletonRow {
+        animation: none;
+    }
+
+    .deviceListWrap,
+    .chevron {
+        transition: none;
+    }
+}

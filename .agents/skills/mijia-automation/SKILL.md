@@ -175,8 +175,9 @@ video → ui-sample → graph-diff → local-tested → gateway-roundtrip → ru
 4. **调用能力校验**：MCP 使用 `mijia_validate_graph_capabilities`，Web Agent 使用 `validate_graph_capabilities`，确认设备字段、权限、类型、范围、动作参数和变量引用
 5. **调用结构校验**：MCP 使用 `mijia_validate_graph`，Web Agent 使用 `validate_graph`，检查连接完整性
 6. **修复错误**：任一校验器报告 error 时修复并重新校验，直到全部通过
-7. **调用 create_graph 或修改工具**：两项校验通过后调用创建/修改工具；工具内部仍会再次校验。MCP 修改已有规则优先用 `mijia_patch_graph`（见下文）
-8. **确认结果**：回读规则并确认启用状态、变量作用域和关键节点
+7. **确认方案（Web Agent 必须）**：在对话式创建/修改规则时，若用户尚未确认最终方案，先向用户展示触发、条件、动作或变更内容并调用 `ask_user` 等待确认，不得未经确认直接写入网关
+8. **调用 create_graph 或修改工具**：用户确认且两项校验通过后调用创建/修改工具；工具内部仍会再次校验。MCP 修改已有规则优先用 `mijia_patch_graph`（见下文）
+9. **确认结果**：回读规则并确认启用状态、变量作用域和关键节点
 
 设计表使用固定格式：
 

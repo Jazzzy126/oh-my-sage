@@ -25,6 +25,30 @@ export type AgentOutput =
     | { type: 'error'; error: string };
 
 /**
+ * 判断紧邻当前用户消息之前的上一轮助手回复中，是否调用过 ask_user 向用户发起确认。
+ * 只有上一轮确实发起过 ask_user，才允许本轮执行规则写操作（创建/修改/删除）。
+ */
+export function hasAskUserInLastAssistantTurn(messages: CoreMessage[]): boolean {
+    for (let i = messages.length - 1; i >= 0; i--) {
+        const msg = messages[i];
+        if (msg.role === 'user') {
+            return false;
+        }
+        if (Array.isArray(msg.content)) {
+            for (const part of msg.content) {
+                if (
+                    (part.type === 'tool-call' || part.type === 'tool-result') &&
+                    part.toolName === 'ask_user'
+                ) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+/**
  * Agent 类
  * 实现持续运行的思考-行动循环
  */
@@ -41,11 +65,21 @@ export class Agent {
     private sessionId: string | null = null;
     private sessionStore = getSessionStore();
     private systemPrompt: string;
+    /** 当前轮次是否允许执行规则写操作（创建/修改/删除） */
+    private allowGraphMutation = false;
+    /** 无 sessionId 内存模式下的上一轮确认标记 */
+    private lastTurnAskedUser = false;
 
     constructor(gateway: GatewayClient, modelConfig?: ModelConfig) {
         this.gateway = gateway;
         this.modelConfig = modelConfig || getModelConfigFromEnv();
-        this.tools = createCoreTools(gateway);
+        this.tools = createCoreTools(gateway, {
+            canMutateGraph: () => this.allowGraphMutation,
+            onAskUser: () => {
+                // 一旦本轮调用了 ask_user，立即关闭写权限，防止同一步并行调用写工具偷跑
+                this.allowGraphMutation = false;
+            },
+        });
 
         // 渐进式披露第一层：只添加 skill catalog（name + description）
         const skillsCatalog = formatSkillCatalogForPrompt();
@@ -323,6 +357,13 @@ export class Agent {
             // 确保 this.messages 与 sessionStore 一致
             await this.reloadMessages();
 
+            // 在写入本轮用户消息前，根据上一轮助手是否发起了 ask_user 决定本轮是否允许规则写入
+            this.allowGraphMutation = Boolean(userInput) && (
+                this.sessionId
+                    ? hasAskUserInLastAssistantTurn(this.messages)
+                    : this.lastTurnAskedUser
+            );
+
             // 添加用户输入到消息历史
             if (userInput) {
                 this.messages.push({role: 'user', content: userInput});
@@ -342,6 +383,7 @@ export class Agent {
             }
             // 创建模型实例
             const model = createModel(this.modelConfig);
+            const abortController = new AbortController();
 
             // 使用 Vercel AI SDK 的 streamText
             const result = await streamText({
@@ -351,6 +393,7 @@ export class Agent {
                 tools: this.tools,
                 maxSteps: 15,  // 防止无限循环
                 temperature: this.modelConfig.temperature || 0.7,
+                abortSignal: abortController.signal,
             });
 
             // 处理流式输出
@@ -418,6 +461,9 @@ export class Agent {
                     case 'step-finish':
                         // 一步完成
                         if (needsUserInput) {
+                            // 立即中止底层流，防止 SDK 在后台继续执行后续步骤
+                            abortController.abort();
+                            this.lastTurnAskedUser = true;
                             // 需要用户输入，暂停循环
                             // 保存到 sessionStore（复用现有架构）
                             await this.saveAssistantMessage(fullText, thinkingText, toolCalls);
@@ -435,6 +481,7 @@ export class Agent {
 
                     case 'finish':
                         // 整体完成
+                        this.lastTurnAskedUser = false;
                         // 保存到 sessionStore（复用现有架构）
                         await this.saveAssistantMessage(fullText, thinkingText, toolCalls);
                         // 从 sessionStore 重新加载，确保 this.messages 与 sessionStore 一致
@@ -450,6 +497,7 @@ export class Agent {
             }
 
             // 如果循环结束但没有收到 finish 事件
+            this.lastTurnAskedUser = false;
             // 保存到 sessionStore
             await this.saveAssistantMessage(fullText, thinkingText, toolCalls);
             // 从 sessionStore 重新加载

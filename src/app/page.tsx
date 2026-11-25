@@ -1,16 +1,23 @@
 'use client';
 
-import React, {useState, useCallback, useRef} from 'react';
-import {Layout, Typography, Space, message, Tabs} from 'antd';
-import {RobotOutlined, HomeOutlined, ApartmentOutlined, ApiOutlined} from '@ant-design/icons';
+import React, {useState, useCallback, useRef, useEffect} from 'react';
+import {message} from 'antd';
+import {
+    ApartmentOutlined,
+    AppstoreOutlined,
+    FormOutlined,
+    LogoutOutlined,
+    MenuOutlined,
+    SearchOutlined,
+    SettingOutlined,
+} from '@ant-design/icons';
 import Chat from '@/components/Chat';
 import DevicePanel from '@/components/DevicePanel';
 import GraphPanel from '@/components/GraphPanel';
 import SessionPanel from '@/components/SessionPanel';
 import LoginPage from '@/components/LoginPage';
-
-const {Header, Sider, Content} = Layout;
-const {Text} = Typography;
+import {ThemeToggleButton} from '@/components/ThemeProvider';
+import styles from './page.module.css';
 
 interface SessionMeta {
     id: string;
@@ -38,9 +45,34 @@ interface GraphSummary {
     lastUpdateTime?: number;
 }
 
+type MainView = 'chat' | 'graphs' | 'devices';
+
+function SidebarCollapseIcon() {
+    return (
+        <svg width="17" height="17" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+            <rect x="2.25" y="2.75" width="13.5" height="12.5" rx="2.5" stroke="currentColor" strokeWidth="1.4"/>
+            <line x1="6.75" y1="3.25" x2="6.75" y2="14.75" stroke="currentColor" strokeWidth="1.4"/>
+        </svg>
+    );
+}
+
+function BrandGlyph({size = 20}: {size?: number}) {
+    return (
+        <svg width={size} height={size} viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <rect x="2.5" y="2.5" width="15" height="15" rx="4.5" stroke="var(--ui-signal)" strokeWidth="1.75"/>
+            <circle cx="10" cy="10" r="3" fill="var(--ui-signal)"/>
+        </svg>
+    );
+}
+
 export default function HomePage() {
-    const [collapsed, setCollapsed] = useState(false);
+    const [leftOpen, setLeftOpen] = useState(true);
+    const [activeView, setActiveView] = useState<MainView>('chat');
+    const [sessionSearchOpen, setSessionSearchOpen] = useState(false);
+    const [draftInsert, setDraftInsert] = useState<{ text: string; seq: number } | null>(null);
+
     const [isLoggedIn, setIsLoggedIn] = useState(false);
+    const [authChecking, setAuthChecking] = useState(true);
     const [passcode, setPasscode] = useState('');
     const [devicesLoading, setDevicesLoading] = useState(false);
     const [devices, setDevices] = useState<any[]>([]);
@@ -54,6 +86,16 @@ export default function HomePage() {
     const [graphs, setGraphs] = useState<GraphSummary[]>([]);
     const [graphsLoading, setGraphsLoading] = useState(false);
     const graphsLoadedRef = useRef(false);
+
+    const [settingsOpen, setSettingsOpen] = useState(false);
+    const [loggingOut, setLoggingOut] = useState(false);
+    const settingsRef = useRef<HTMLDivElement | null>(null);
+
+    const closeDrawerOnMobile = useCallback(() => {
+        if (typeof window !== 'undefined' && window.innerWidth <= 900) {
+            setLeftOpen(false);
+        }
+    }, []);
 
     const loadDevices = useCallback(async () => {
         setDevicesLoading(true);
@@ -110,15 +152,88 @@ export default function HomePage() {
         await Promise.all([loadDevices(), loadSessions()]);
     };
 
+    const handleLogout = useCallback(async () => {
+        if (loggingOut) return;
+        setLoggingOut(true);
+        try {
+            const response = await fetch('/api/auth', {method: 'DELETE'});
+            const result = await response.json();
+            if (!result.success) {
+                message.error(result.message || '退出登录失败');
+                return;
+            }
+            setSettingsOpen(false);
+            setIsLoggedIn(false);
+            setPasscode('');
+            setDevices([]);
+            setStats({total: 0, online: 0, offline: 0, rooms: 0});
+            setGraphs([]);
+            graphsLoadedRef.current = false;
+            setActiveSessionId(undefined);
+            setCurrentMessages([]);
+            setActiveView('chat');
+            message.success('已断开网关连接，请重新输入登录码');
+        } catch (error) {
+            message.error('退出登录失败: ' + String(error));
+        } finally {
+            setLoggingOut(false);
+        }
+    }, [loggingOut]);
+
+    // 点击外部或按 Escape 关闭设置菜单
+    useEffect(() => {
+        if (!settingsOpen) return;
+        const handlePointerDown = (e: MouseEvent) => {
+            if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) {
+                setSettingsOpen(false);
+            }
+        };
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                setSettingsOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handlePointerDown);
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+            document.removeEventListener('mousedown', handlePointerDown);
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [settingsOpen]);
+
+    // 页面刷新后检查服务端是否已保持网关连接，已连接则直接恢复工作台
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const response = await fetch('/api/auth', {cache: 'no-store'});
+                const result = await response.json();
+                if (!cancelled && result.success && result.connected) {
+                    setIsLoggedIn(true);
+                    await Promise.all([loadDevices(), loadSessions()]);
+                }
+            } catch {
+                // 检查失败时回退到登录页
+            } finally {
+                if (!cancelled) setAuthChecking(false);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [loadDevices, loadSessions]);
+
     const handleSelectSession = async (sessionId: string) => {
+        setActiveView('chat');
         setActiveSessionId(sessionId);
+        closeDrawerOnMobile();
         try {
             const response = await fetch(`/api/sessions/${sessionId}`);
             const result = await response.json();
             if (result.success) {
                 setCurrentMessages(result.messages || []);
             }
-        } catch (error) {
+        } catch {
             message.error('加载 Session 消息失败');
         }
     };
@@ -133,16 +248,27 @@ export default function HomePage() {
                     setActiveSessionId(undefined);
                     setCurrentMessages([]);
                 }
-                message.success('Session 已删除');
+                message.success('对话已删除');
             }
-        } catch (error) {
-            message.error('删除 Session 失败');
+        } catch {
+            message.error('删除对话失败');
         }
     };
 
     const handleNewSession = () => {
+        setActiveView('chat');
         setActiveSessionId(undefined);
         setCurrentMessages([]);
+        closeDrawerOnMobile();
+    };
+
+    const handleSearchClick = () => {
+        if (!leftOpen) {
+            setLeftOpen(true);
+            setSessionSearchOpen(true);
+        } else {
+            setSessionSearchOpen(v => !v);
+        }
     };
 
     const handleSessionCreated = (sessionId: string, messages: SessionMessage[]) => {
@@ -184,7 +310,7 @@ export default function HomePage() {
             } else {
                 message.error(result.message || '操作失败');
             }
-        } catch (error) {
+        } catch {
             message.error('切换规则状态失败');
         }
     };
@@ -199,168 +325,355 @@ export default function HomePage() {
             } else {
                 message.error(result.message || '删除失败');
             }
-        } catch (error) {
+        } catch {
             message.error('删除规则失败');
         }
     };
 
-    const handleTabChange = (key: string) => {
-        if (key === 'graphs' && !graphsLoadedRef.current) {
+    // 监听窗口宽度变化，窄屏时自动收起左侧栏
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const mqLeft = window.matchMedia('(max-width: 900px)');
+
+        if (mqLeft.matches) setLeftOpen(false);
+
+        const handleLeftChange = (e: MediaQueryListEvent) => {
+            setLeftOpen(!e.matches);
+        };
+
+        mqLeft.addEventListener('change', handleLeftChange);
+        return () => {
+            mqLeft.removeEventListener('change', handleLeftChange);
+        };
+    }, []);
+
+    const handleViewChange = (view: MainView) => {
+        setActiveView(view);
+        if (view === 'graphs' && !graphsLoadedRef.current) {
             loadGraphs();
         }
+        closeDrawerOnMobile();
     };
+
+    const handleInsertToChat = useCallback((text: string) => {
+        setActiveView('chat');
+        setDraftInsert(prev => ({text, seq: (prev?.seq ?? 0) + 1}));
+        closeDrawerOnMobile();
+    }, [closeDrawerOnMobile]);
+
+    const handleEditGraphInChat = useCallback((graph: { id: string; name: string }) => {
+        handleInsertToChat(`帮我修改规则「${graph.name}」（ID: ${graph.id}）：`);
+    }, [handleInsertToChat]);
+
+    const handleGraphsMutated = useCallback(() => {
+        loadGraphs();
+    }, [loadGraphs]);
+
+    const ensureGraphsLoaded = useCallback(() => {
+        if (!graphsLoadedRef.current && !graphsLoading) {
+            loadGraphs();
+        }
+    }, [graphsLoading, loadGraphs]);
+
+    if (authChecking) {
+        return <div className={styles.shell}/>;
+    }
 
     if (!isLoggedIn) {
         return <LoginPage onLoginSuccess={handleLoginSuccess}/>;
     }
 
     return (
-        <Layout className="app-shell" style={{background: 'var(--bg-deep)'}}>
-            {/* 顶栏 */}
-            <Header style={{
-                padding: '0 24px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                position: 'sticky',
-                top: 0,
-                zIndex: 100,
-            }}>
-                <Space size={12}>
-                    <div style={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: 'var(--radius-md)',
-                        background: 'var(--gradient-primary)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        boxShadow: 'var(--shadow-glow)',
-                    }}>
-                        <RobotOutlined style={{fontSize: 16, color: '#fff'}}/>
-                    </div>
-                    <span className="gradient-text" style={{fontSize: 17, fontWeight: 700, letterSpacing: -0.3}}>
-            Oh My Sage
-          </span>
-                    <Text style={{color: 'var(--text-muted)', fontSize: 12}}>
-                        米家自动化极客版 AI Agent
-                    </Text>
-                </Space>
-                <Space size={6}>
-                    <div style={{
-                        width: 7,
-                        height: 7,
-                        borderRadius: '50%',
-                        background: '#10b981',
-                        boxShadow: '0 0 8px rgba(16,185,129,0.5)',
-                    }}/>
-                    <Text style={{color: 'var(--text-secondary)', fontSize: 12}}>
-                        {stats.online}/{stats.total} 设备在线
-                    </Text>
-                </Space>
-            </Header>
+        <div className={styles.shell}>
+            {leftOpen && (
+                <button
+                    type="button"
+                    className={styles.mobileBackdrop}
+                    aria-label="收起侧边栏"
+                    onClick={() => setLeftOpen(false)}
+                />
+            )}
 
-            <Layout className="app-body">
-                {/* 左侧边栏 */}
-                <Sider
-                    className="app-sider"
-                    width={300}
-                    collapsible
-                    collapsed={collapsed}
-                    onCollapse={setCollapsed}
-                    breakpoint="lg"
-                    trigger={null}
-                    style={{
-                        borderRight: '1px solid var(--border-subtle)',
-                    }}
-                >
-                    {!collapsed ? (
-                        <Tabs
-                            className="sidebar-tabs"
-                            defaultActiveKey="devices"
-                            onChange={handleTabChange}
-                            centered
-                            size="small"
-                            items={[
-                                {
-                                    key: 'devices',
-                                    label: <span><HomeOutlined style={{marginRight: 4}}/>设备</span>,
-                                    children: (
-                                        <DevicePanel
-                                            devices={devices}
-                                            stats={stats}
-                                            loading={devicesLoading}
-                                            onRefresh={loadDevices}
-                                        />
-                                    ),
-                                },
-                                {
-                                    key: 'graphs',
-                                    label: <span><ApartmentOutlined style={{marginRight: 4}}/>规则</span>,
-                                    children: (
-                                        <GraphPanel
-                                            graphs={graphs}
-                                            loading={graphsLoading}
-                                            onRefresh={loadGraphs}
-                                            onToggle={handleToggleGraph}
-                                            onDelete={handleDeleteGraph}
-                                        />
-                                    ),
-                                },
-                            ]}
-                        />
+            {/* 左侧导航栏：严格对齐 Gemini 展开 / 收缩两态 */}
+            <aside
+                className={`${styles.sidebar} ${!leftOpen ? styles.sidebarCollapsed : ''}`}
+                aria-label="主导航与对话历史"
+            >
+                {/* 顶部行：展开为 [Logo + 名称 ... 搜索 + 收起]，收缩为 [圆形 Logo（点击展开）] */}
+                <div className={styles.sidebarTop}>
+                    {leftOpen ? (
+                        <>
+                            <button
+                                type="button"
+                                className={styles.sidebarBrand}
+                                onClick={() => handleViewChange('chat')}
+                                title="返回对话"
+                            >
+                                <BrandGlyph size={20}/>
+                                <span className={styles.sidebarBrandName}>Oh My Sage</span>
+                            </button>
+
+                            <div className={styles.sidebarTopActions}>
+                                <button
+                                    type="button"
+                                    className={`${styles.topIconBtn} ${sessionSearchOpen ? styles.topIconBtnActive : ''}`}
+                                    onClick={handleSearchClick}
+                                    aria-label="搜索对话"
+                                    title="搜索对话"
+                                >
+                                    <SearchOutlined style={{fontSize: 16}}/>
+                                </button>
+                                <button
+                                    type="button"
+                                    className={styles.topIconBtn}
+                                    onClick={() => setLeftOpen(false)}
+                                    aria-label="收起侧边栏"
+                                    title="收起侧边栏"
+                                >
+                                    <SidebarCollapseIcon/>
+                                </button>
+                            </div>
+                        </>
                     ) : (
-                        <div style={{padding: 16, textAlign: 'center', color: 'var(--text-muted)'}}>
-                            <ApiOutlined style={{fontSize: 22}}/>
+                        <button
+                            type="button"
+                            className={styles.collapsedBrandBtn}
+                            onClick={() => setLeftOpen(true)}
+                            aria-label="展开侧边栏"
+                            title="Oh My Sage · 点击展开侧边栏"
+                        >
+                            <BrandGlyph size={20}/>
+                        </button>
+                    )}
+                </div>
+
+                {/* 发起新对话药丸（收缩态自动变为 40×40 圆形图标） */}
+                <div className={styles.sidebarAction}>
+                    <button
+                        type="button"
+                        className={`${styles.newChatPill} ${!leftOpen ? styles.newChatPillCollapsed : ''}`}
+                        onClick={handleNewSession}
+                        aria-label="发起新对话"
+                        title="发起新对话"
+                    >
+                        <FormOutlined style={{fontSize: 16}}/>
+                        <span className={styles.collapsibleLabel}>发起新对话</span>
+                    </button>
+                </div>
+
+                {/* 主导航列表 */}
+                <nav className={styles.navList} aria-label="主视图导航">
+                    {!leftOpen && (
+                        <button
+                            type="button"
+                            className={styles.navItem}
+                            onClick={handleSearchClick}
+                            aria-label="搜索对话"
+                            title="搜索对话"
+                        >
+                            <SearchOutlined className={styles.navItemIcon} style={{fontSize: 16}}/>
+                        </button>
+                    )}
+
+                    <button
+                        type="button"
+                        className={`${styles.navItem} ${activeView === 'devices' ? styles.navItemActive : ''}`}
+                        aria-current={activeView === 'devices' ? 'page' : undefined}
+                        onClick={() => handleViewChange('devices')}
+                        title={`设备（${stats.online}/${stats.total} 在线）`}
+                    >
+                        <AppstoreOutlined className={styles.navItemIcon} style={{fontSize: 16}}/>
+                        <span className={styles.collapsibleLabel}>设备</span>
+                        {leftOpen && stats.total > 0 && (
+                            <span className={styles.navBadge}>{stats.total}</span>
+                        )}
+                    </button>
+
+                    <button
+                        type="button"
+                        className={`${styles.navItem} ${activeView === 'graphs' ? styles.navItemActive : ''}`}
+                        aria-current={activeView === 'graphs' ? 'page' : undefined}
+                        onClick={() => handleViewChange('graphs')}
+                        title="自动化规则"
+                    >
+                        <ApartmentOutlined className={styles.navItemIcon} style={{fontSize: 16}}/>
+                        <span className={styles.collapsibleLabel}>自动化规则</span>
+                        {leftOpen && graphsLoadedRef.current && (
+                            <span className={styles.navBadge}>{graphs.length}</span>
+                        )}
+                    </button>
+                </nav>
+
+                {/* 对话历史区：仅展开时显示，极简单行列表 */}
+                <div
+                    className={`${styles.sidebarSessions} ${!leftOpen ? styles.sidebarSessionsHidden : ''}`}
+                    aria-hidden={!leftOpen}
+                >
+                    <SessionPanel
+                        embedded
+                        searchOpen={sessionSearchOpen}
+                        sessions={sessions}
+                        activeSessionId={activeSessionId}
+                        loading={sessionsLoading}
+                        onSelectSession={handleSelectSession}
+                        onDeleteSession={handleDeleteSession}
+                        onNewSession={handleNewSession}
+                        onRefresh={loadSessions}
+                    />
+                </div>
+
+                {/* 底部栏：展开为 [中枢状态徽章+两行文字 ... 设置]，收缩为 [设置 / 中枢徽章] 垂直对齐 */}
+                <div className={`${styles.sidebarFooter} ${!leftOpen ? styles.sidebarFooterCollapsed : ''}`} ref={settingsRef}>
+                    {!leftOpen && (
+                        <button
+                            type="button"
+                            className={`${styles.footerIconBtn} ${settingsOpen ? styles.footerIconBtnActive : ''}`}
+                            onClick={() => setSettingsOpen(v => !v)}
+                            aria-haspopup="menu"
+                            aria-expanded={settingsOpen}
+                            aria-label="设置"
+                            title="设置"
+                        >
+                            <SettingOutlined
+                                className={`${styles.settingsIcon} ${settingsOpen ? styles.settingsIconOpen : ''}`}
+                                style={{fontSize: 16}}
+                            />
+                        </button>
+                    )}
+
+                    <button
+                        type="button"
+                        className={`${styles.hubProfile} ${!leftOpen ? styles.hubProfileCollapsed : ''}`}
+                        onClick={() => handleViewChange('devices')}
+                        aria-label={`小米中枢网关，${stats.online}/${stats.total} 设备在线`}
+                        title={`小米中枢网关 · ${stats.online}/${stats.total} 设备在线`}
+                    >
+                        <span className={styles.hubAvatar} aria-hidden="true">
+                            <span className={styles.hubAvatarDot}/>
+                        </span>
+                        {leftOpen && (
+                            <span className={styles.hubProfileText}>
+                                <span className={styles.hubProfileName}>小米中枢网关</span>
+                                <span className={styles.hubProfileSub}>
+                                    {stats.online}/{stats.total} 设备在线
+                                </span>
+                            </span>
+                        )}
+                    </button>
+
+                    {leftOpen && (
+                        <button
+                            type="button"
+                            className={`${styles.footerIconBtn} ${settingsOpen ? styles.footerIconBtnActive : ''}`}
+                            onClick={() => setSettingsOpen(v => !v)}
+                            aria-haspopup="menu"
+                            aria-expanded={settingsOpen}
+                            aria-label="设置"
+                            title="设置"
+                        >
+                            <SettingOutlined
+                                className={`${styles.settingsIcon} ${settingsOpen ? styles.settingsIconOpen : ''}`}
+                                style={{fontSize: 16}}
+                            />
+                        </button>
+                    )}
+
+                    {settingsOpen && (
+                        <div
+                            className={`${styles.settingsMenu} ${
+                                leftOpen ? styles.settingsMenuUp : styles.settingsMenuRight
+                            }`}
+                            role="menu"
+                            aria-label="设置菜单"
+                        >
+                            <button
+                                type="button"
+                                role="menuitem"
+                                className={styles.settingsItem}
+                                onClick={handleLogout}
+                                disabled={loggingOut}
+                            >
+                                <span className={styles.settingsItemIcon} aria-hidden="true">
+                                    <LogoutOutlined style={{fontSize: 14}}/>
+                                </span>
+                                <span className={styles.settingsItemText}>
+                                    <span className={styles.settingsItemTitle}>
+                                        {loggingOut ? '正在断开连接…' : '退出到登录页'}
+                                    </span>
+                                    <span className={styles.settingsItemDesc}>
+                                        断开当前网关连接并重填登录码
+                                    </span>
+                                </span>
+                            </button>
                         </div>
                     )}
-                </Sider>
+                </div>
+            </aside>
 
-                {/* 主内容区 */}
-                <Content className="app-content" style={{padding: 16, background: 'var(--bg-deep)'}}>
-                    <div className="app-main-grid" style={{display: 'flex', gap: 12}}>
-                        {/* 聊天区 */}
-                        <div
-                            className="glass-panel app-chat-panel"
-                            style={{
-                                flex: 1,
-                                borderRadius: 'var(--radius-lg)',
-                                overflow: 'hidden',
-                                display: 'flex',
-                                flexDirection: 'column',
-                            }}
+            {/* 右侧无边框通透全高主画布 */}
+            <main className={styles.mainStage}>
+                <header className={styles.canvasHeader}>
+                    <div className={styles.canvasHeaderLeft}>
+                        <button
+                            type="button"
+                            className={styles.mobileMenuButton}
+                            onClick={() => setLeftOpen(v => !v)}
+                            aria-expanded={leftOpen}
+                            aria-label="打开导航栏"
                         >
-                            <Chat
-                                passcode={passcode}
-                                sessionId={activeSessionId}
-                                initialMessages={currentMessages}
-                                onSessionCreated={handleSessionCreated}
-                                onResetSession={handleResetSession}
-                            />
-                        </div>
-
-                        {/* Session 面板 */}
-                        <div
-                            className="glass-panel app-session-panel"
-                            style={{
-                                width: 300,
-                                borderRadius: 'var(--radius-lg)',
-                                overflow: 'hidden',
-                            }}
-                        >
-                            <SessionPanel
-                                sessions={sessions}
-                                activeSessionId={activeSessionId}
-                                loading={sessionsLoading}
-                                onSelectSession={handleSelectSession}
-                                onDeleteSession={handleDeleteSession}
-                                onNewSession={handleNewSession}
-                                onRefresh={loadSessions}
-                            />
-                        </div>
+                            <MenuOutlined style={{fontSize: 16}}/>
+                        </button>
+                        <span className={styles.mobileBrandName}>Oh My Sage</span>
                     </div>
-                </Content>
-            </Layout>
-        </Layout>
+
+                    <div className={styles.canvasHeaderRight}>
+                        <ThemeToggleButton className={styles.themeButton}/>
+                    </div>
+                </header>
+
+                <div className={styles.canvasBody}>
+                    <div className={`${styles.viewPane} ${activeView !== 'chat' ? styles.viewPaneHidden : ''}`}>
+                        <Chat
+                            passcode={passcode}
+                            sessionId={activeSessionId}
+                            initialMessages={currentMessages}
+                            draftInsert={draftInsert}
+                            devices={devices}
+                            graphs={graphs}
+                            graphsLoading={graphsLoading}
+                            onEnsureGraphsLoaded={ensureGraphsLoaded}
+                            onSessionCreated={handleSessionCreated}
+                            onResetSession={handleResetSession}
+                            onGraphsMutated={handleGraphsMutated}
+                        />
+                    </div>
+
+                    {activeView === 'graphs' && (
+                        <div className={styles.viewPane}>
+                            <GraphPanel
+                                graphs={graphs}
+                                loading={graphsLoading}
+                                onRefresh={loadGraphs}
+                                onToggle={handleToggleGraph}
+                                onDelete={handleDeleteGraph}
+                                onEditInChat={handleEditGraphInChat}
+                            />
+                        </div>
+                    )}
+
+                    {activeView === 'devices' && (
+                        <div className={styles.viewPane}>
+                            <DevicePanel
+                                devices={devices}
+                                stats={stats}
+                                loading={devicesLoading}
+                                onRefresh={loadDevices}
+                                onInsertDevice={handleInsertToChat}
+                            />
+                        </div>
+                    )}
+                </div>
+            </main>
+        </div>
     );
 }

@@ -36,3 +36,9 @@ export function isGatewayConnected(): boolean {
     const manager = getGlobalManager();
     return manager?.isConnected() ?? false;
 }
+
+export async function disconnectGateway(): Promise<void> {
+    const manager = getGlobalManager();
+    if (!manager) return;
+    await manager.disconnect();
+}
