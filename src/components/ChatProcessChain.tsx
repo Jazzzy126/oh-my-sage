@@ -11,10 +11,19 @@ import {
 import styles from './Chat.module.css';
 
 export interface ToolCallItem {
+    toolCallId?: string;
     tool: string;
     args?: any;
     result?: any;
     success: boolean;
+}
+
+export interface ProcessUsageInfo {
+    promptTokens?: number;
+    completionTokens?: number;
+    totalTokens?: number;
+    durationMs?: number;
+    stepCount?: number;
 }
 
 interface ChatProcessChainProps {
@@ -23,6 +32,22 @@ interface ChatProcessChainProps {
     toolCalls: ToolCallItem[];
     streaming: boolean;
     hasFinalContent?: boolean;
+    usage?: ProcessUsageInfo;
+}
+
+function formatMetricsSuffix(usage?: ProcessUsageInfo): string {
+    if (!usage) return '';
+    const parts: string[] = [];
+    if (typeof usage.durationMs === 'number' && usage.durationMs > 0) {
+        parts.push(`${(usage.durationMs / 1000).toFixed(1)}s`);
+    }
+    if (typeof usage.totalTokens === 'number' && usage.totalTokens > 0) {
+        const tokenLabel = usage.totalTokens >= 1000
+            ? `${(usage.totalTokens / 1000).toFixed(1)}k tokens`
+            : `${usage.totalTokens} tokens`;
+        parts.push(tokenLabel);
+    }
+    return parts.length > 0 ? ` · ${parts.join(' · ')}` : '';
 }
 
 function formatJsonValue(value: unknown): string {
@@ -46,6 +71,7 @@ const ChatProcessChain = React.memo(function ChatProcessChain({
     toolCalls,
     streaming,
     hasFinalContent = false,
+    usage,
 }: ChatProcessChainProps) {
     const [manualExpanded, setManualExpanded] = useState<boolean | null>(null);
     const [openTools, setOpenTools] = useState<Record<number, boolean>>({});
@@ -55,14 +81,15 @@ const ChatProcessChain = React.memo(function ChatProcessChain({
     // 思考或工具执行中默认展开；正文开始输出或完成后自动收起，仍支持手动展开
     const expanded = manualExpanded !== null ? manualExpanded : (streaming && !hasFinalContent);
     const runningTool = toolCalls.find(tc => !tc.success && tc.result === undefined);
+    const metricsSuffix = streaming ? '' : formatMetricsSuffix(usage);
 
     const statusTitle = streaming
         ? runningTool
             ? `正在调用 ${runningTool.tool}…`
             : '正在思考…'
         : toolCalls.length > 0
-            ? `已深度思考 · 执行了 ${toolCalls.length} 个步骤`
-            : '已深度思考';
+            ? `已深度思考 · 执行了 ${toolCalls.length} 个步骤${metricsSuffix}`
+            : `已深度思考${metricsSuffix}`;
 
     const toggleToolDetail = (idx: number) => {
         setOpenTools(prev => ({...prev, [idx]: !prev[idx]}));

@@ -83,6 +83,11 @@ export default function HomePage() {
 
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [authChecking, setAuthChecking] = useState(true);
+    const [webAuthRequired, setWebAuthRequired] = useState(false);
+    const [webAuthenticated, setWebAuthenticated] = useState(true);
+    const [webTokenInput, setWebTokenInput] = useState('');
+    const [webAuthSubmitting, setWebAuthSubmitting] = useState(false);
+    const [webAuthError, setWebAuthError] = useState<string | null>(null);
     const [passcode, setPasscode] = useState('');
     const [devicesLoading, setDevicesLoading] = useState(false);
     const [devices, setDevices] = useState<any[]>([]);
@@ -213,11 +218,19 @@ export default function HomePage() {
         };
     }, [settingsOpen]);
 
-    // 页面刷新后检查服务端是否已保持网关连接，已连接则直接恢复工作台
+    // 页面刷新后先检查 Web 访问锁（如启用），再检查服务端是否已保持网关连接
     useEffect(() => {
         let cancelled = false;
         (async () => {
             try {
+                const webRes = await fetch('/api/web-auth', {cache: 'no-store'});
+                const webJson = await webRes.json();
+                if (!cancelled && webJson.required && !webJson.authenticated) {
+                    setWebAuthRequired(true);
+                    setWebAuthenticated(false);
+                    return;
+                }
+
                 const response = await fetch('/api/auth', {cache: 'no-store'});
                 const result = await response.json();
                 if (!cancelled && result.success && result.connected) {
@@ -234,6 +247,37 @@ export default function HomePage() {
             cancelled = true;
         };
     }, [loadDevices, loadSessions]);
+
+    const handleWebAuthSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!webTokenInput.trim() || webAuthSubmitting) return;
+        setWebAuthSubmitting(true);
+        setWebAuthError(null);
+        try {
+            const res = await fetch('/api/web-auth', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({token: webTokenInput.trim()}),
+            });
+            const json = await res.json();
+            if (!res.ok || !json.success) {
+                setWebAuthError(json.error || '访问密码错误');
+                return;
+            }
+            setWebAuthenticated(true);
+            setWebTokenInput('');
+            const authRes = await fetch('/api/auth', {cache: 'no-store'});
+            const authJson = await authRes.json();
+            if (authJson.success && authJson.connected) {
+                setIsLoggedIn(true);
+                await Promise.all([loadDevices(), loadSessions()]);
+            }
+        } catch {
+            setWebAuthError('网络错误，请稍后重试');
+        } finally {
+            setWebAuthSubmitting(false);
+        }
+    };
 
     const handleSelectSession = async (sessionId: string) => {
         setActiveView('chat');
@@ -393,6 +437,77 @@ export default function HomePage() {
 
     if (authChecking) {
         return <div className={styles.shell}/>;
+    }
+
+    if (webAuthRequired && !webAuthenticated) {
+        return (
+            <div
+                className={styles.shell}
+                style={{alignItems: 'center', justifyContent: 'center', padding: 24}}
+            >
+                <form
+                    onSubmit={handleWebAuthSubmit}
+                    style={{
+                        width: '100%',
+                        maxWidth: 360,
+                        padding: 24,
+                        borderRadius: 'var(--radius-lg)',
+                        border: '1px solid var(--ui-border)',
+                        background: 'var(--ui-surface)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 14,
+                    }}
+                >
+                    <div style={{display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 15}}>
+                        <BrandGlyph size={18}/>
+                        <span>Oh My Sage · 访问验证</span>
+                    </div>
+                    <p style={{margin: 0, fontSize: 12.5, color: 'var(--ui-secondary)', lineHeight: 1.5}}>
+                        当前服务已开启访问密码保护（WEB_ACCESS_TOKEN），验证通过后将在本浏览器保持登录态。
+                    </p>
+                    <input
+                        type="password"
+                        autoFocus
+                        placeholder="请输入 Web 访问密码"
+                        value={webTokenInput}
+                        disabled={webAuthSubmitting}
+                        onChange={(e) => setWebTokenInput(e.target.value)}
+                        style={{
+                            height: 38,
+                            padding: '0 12px',
+                            borderRadius: 'var(--radius-md)',
+                            border: '1px solid var(--ui-border)',
+                            background: 'var(--ui-subtle)',
+                            color: 'var(--ui-ink)',
+                            fontSize: 13.5,
+                            outline: 'none',
+                        }}
+                    />
+                    {webAuthError && (
+                        <div style={{fontSize: 12.5, color: 'var(--ui-alert)'}} role="alert">
+                            {webAuthError}
+                        </div>
+                    )}
+                    <button
+                        type="submit"
+                        disabled={!webTokenInput.trim() || webAuthSubmitting}
+                        style={{
+                            height: 36,
+                            borderRadius: 'var(--radius-md)',
+                            border: 'none',
+                            background: 'var(--ui-btn-primary)',
+                            color: 'var(--ui-btn-primary-text)',
+                            fontWeight: 500,
+                            fontSize: 13,
+                            cursor: 'pointer',
+                        }}
+                    >
+                        {webAuthSubmitting ? '验证中…' : '进入工作台'}
+                    </button>
+                </form>
+            </div>
+        );
     }
 
     if (!isLoggedIn) {

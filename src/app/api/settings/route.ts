@@ -29,10 +29,16 @@ export async function PUT(request: NextRequest) {
         const patch: SettingsPatch = {};
 
         if (typeof body.gatewayUrl === 'string') patch.gatewayUrl = body.gatewayUrl;
+        if (body.llmProvider === 'openai' || body.llmProvider === 'anthropic') {
+            patch.llmProvider = body.llmProvider;
+        }
         if (typeof body.llmBaseUrl === 'string') patch.llmBaseUrl = body.llmBaseUrl;
         if (typeof body.llmApiKey === 'string') patch.llmApiKey = body.llmApiKey;
         if (typeof body.clearApiKey === 'boolean') patch.clearApiKey = body.clearApiKey;
         if (typeof body.llmModel === 'string') patch.llmModel = body.llmModel;
+        if (typeof body.customInstructions === 'string') {
+            patch.customInstructions = body.customInstructions;
+        }
         if (body.llmTemperature !== undefined) {
             patch.llmTemperature = typeof body.llmTemperature === 'number'
                 ? body.llmTemperature

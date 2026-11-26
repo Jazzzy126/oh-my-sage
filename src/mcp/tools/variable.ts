@@ -140,15 +140,20 @@ export function registerVariableTools(
     },
     async ({ id, type, value, name, scope = "global" }) => {
       try {
-        const parsed = CreateVariableInputSchema.safeParse({ id, type, value, name, scope });
+        let normalizedValue: string | number = value;
+        if (type === "number" && typeof value === "string" && value.trim() !== "") {
+          const num = Number(value.trim());
+          if (Number.isFinite(num)) normalizedValue = num;
+        }
+        const parsed = CreateVariableInputSchema.safeParse({ id, type, value: normalizedValue, name, scope });
         if (!parsed.success) {
           return textResult(parsed.error.issues.map((issue) => issue.message).join("；"), undefined, true);
         }
         gatewayManager.ensureConnected();
-        const result = await createVariable(gatewayManager.gateway!, id, type, value, name, scope);
+        const result = await createVariable(gatewayManager.gateway!, id, type, parsed.data.value, name, scope);
         if (!result.success) return errorResult(new Error(result.error), "create_variable");
 
-        return textResult(result.message || `变量 ${id} 创建成功`, { success: true, id, type, value, scope });
+        return textResult(result.message || `变量 ${id} 创建成功`, { success: true, id, type, value: parsed.data.value, scope });
       } catch (error) {
         return errorResult(error, "create_variable");
       }

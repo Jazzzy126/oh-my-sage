@@ -4,11 +4,15 @@ import React, {useEffect, useId, useState} from 'react';
 import {CloseOutlined} from '@ant-design/icons';
 import styles from './SettingsModal.module.css';
 
+export type LlmProviderOption = 'openai' | 'anthropic';
+
 export interface PublicRuntimeSettings {
     gatewayUrl: string;
+    llmProvider?: LlmProviderOption;
     llmBaseUrl: string;
     llmModel: string;
     llmTemperature: number;
+    customInstructions?: string;
     hasApiKey: boolean;
     apiKeyMasked: string;
     gatewayConfigured: boolean;
@@ -30,10 +34,13 @@ export default function SettingsModal({open, onClose, onSaved}: SettingsModalPro
     const [testResult, setTestResult] = useState<{success: boolean; message: string} | null>(null);
 
     const [gatewayUrl, setGatewayUrl] = useState('');
+    const [llmProvider, setLlmProvider] = useState<LlmProviderOption>('openai');
     const [llmBaseUrl, setLlmBaseUrl] = useState('');
+    const [initialBaseUrl, setInitialBaseUrl] = useState('');
     const [llmApiKey, setLlmApiKey] = useState('');
     const [llmModel, setLlmModel] = useState('');
-    const [llmTemperature, setLlmTemperature] = useState('0.7');
+    const [llmTemperature, setLlmTemperature] = useState('0.2');
+    const [customInstructions, setCustomInstructions] = useState('');
     const [hasApiKey, setHasApiKey] = useState(false);
     const [apiKeyMasked, setApiKeyMasked] = useState('');
     const [clearApiKey, setClearApiKey] = useState(false);
@@ -54,9 +61,12 @@ export default function SettingsModal({open, onClose, onSaved}: SettingsModalPro
                 if (result.success && result.settings) {
                     const s = result.settings as PublicRuntimeSettings;
                     setGatewayUrl(s.gatewayUrl || '');
+                    setLlmProvider(s.llmProvider === 'anthropic' ? 'anthropic' : 'openai');
                     setLlmBaseUrl(s.llmBaseUrl || '');
+                    setInitialBaseUrl(s.llmBaseUrl || '');
                     setLlmModel(s.llmModel || '');
-                    setLlmTemperature(String(s.llmTemperature ?? 0.7));
+                    setLlmTemperature(String(s.llmTemperature ?? 0.2));
+                    setCustomInstructions(s.customInstructions || '');
                     setHasApiKey(Boolean(s.hasApiKey));
                     setApiKeyMasked(s.apiKeyMasked || '');
                 } else {
@@ -86,6 +96,9 @@ export default function SettingsModal({open, onClose, onSaved}: SettingsModalPro
 
     if (!open) return null;
 
+    const normalizedCurrentBaseUrl = llmBaseUrl.trim().replace(/\/+$/, '');
+    const baseUrlChanged = Boolean(initialBaseUrl && normalizedCurrentBaseUrl !== initialBaseUrl);
+
     const handleTestConnection = async () => {
         if (testing || saving || loading) return;
 
@@ -97,8 +110,11 @@ export default function SettingsModal({open, onClose, onSaved}: SettingsModalPro
             setTestResult({success: false, message: '请先填写 API Base URL'});
             return;
         }
-        if (!apiKey && (!hasApiKey || clearApiKey)) {
-            setTestResult({success: false, message: '请先填写 API Key'});
+        if (!apiKey && (!hasApiKey || clearApiKey || baseUrlChanged)) {
+            setTestResult({
+                success: false,
+                message: baseUrlChanged ? '已修改 API Base URL，请重新输入 API Key 后再测试' : '请先填写 API Key',
+            });
             return;
         }
         if (!model) {
@@ -113,6 +129,7 @@ export default function SettingsModal({open, onClose, onSaved}: SettingsModalPro
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
+                    llmProvider,
                     llmBaseUrl: baseUrl,
                     llmApiKey: apiKey,
                     llmModel: model,
@@ -147,9 +164,11 @@ export default function SettingsModal({open, onClose, onSaved}: SettingsModalPro
         try {
             const payload: Record<string, unknown> = {
                 gatewayUrl: gatewayUrl.trim(),
+                llmProvider,
                 llmBaseUrl: llmBaseUrl.trim(),
                 llmModel: llmModel.trim(),
-                llmTemperature: llmTemperature.trim() === '' ? 0.7 : Number(llmTemperature),
+                llmTemperature: llmTemperature.trim() === '' ? 0.2 : Number(llmTemperature),
+                customInstructions: customInstructions.trim(),
             };
             if (clearApiKey) {
                 payload.clearApiKey = true;
@@ -231,7 +250,7 @@ export default function SettingsModal({open, onClose, onSaved}: SettingsModalPro
 
                     <div className={styles.section}>
                         <div className={styles.sectionHeader}>
-                            <div className={styles.sectionTitle}>AI 模型（OpenAI 兼容接口）</div>
+                            <div className={styles.sectionTitle}>AI 模型配置</div>
                             <button
                                 type="button"
                                 className={styles.testButton}
@@ -243,6 +262,25 @@ export default function SettingsModal({open, onClose, onSaved}: SettingsModalPro
                         </div>
 
                         <div className={styles.field}>
+                            <label className={styles.label} htmlFor="oms-llm-provider">
+                                接口协议
+                            </label>
+                            <select
+                                id="oms-llm-provider"
+                                className={styles.select}
+                                value={llmProvider}
+                                disabled={loading || saving}
+                                onChange={(e) => {
+                                    setLlmProvider(e.target.value as LlmProviderOption);
+                                    setTestResult(null);
+                                }}
+                            >
+                                <option value="openai">OpenAI 兼容接口（DeepSeek / OpenAI / Qwen / 中转站）</option>
+                                <option value="anthropic">Anthropic 原生接口（支持系统提示词缓存）</option>
+                            </select>
+                        </div>
+
+                        <div className={styles.field}>
                             <label className={styles.label} htmlFor="oms-llm-base-url">
                                 API Base URL
                             </label>
@@ -250,7 +288,11 @@ export default function SettingsModal({open, onClose, onSaved}: SettingsModalPro
                                 id="oms-llm-base-url"
                                 type="url"
                                 className={styles.input}
-                                placeholder="例如 https://api.openai.com/v1"
+                                placeholder={
+                                    llmProvider === 'anthropic'
+                                        ? '例如 https://api.anthropic.com/v1'
+                                        : '例如 https://api.openai.com/v1'
+                                }
                                 value={llmBaseUrl}
                                 disabled={loading || saving}
                                 onChange={(e) => {
@@ -288,9 +330,11 @@ export default function SettingsModal({open, onClose, onSaved}: SettingsModalPro
                                 placeholder={
                                     clearApiKey
                                         ? '保存后将清除已有的 API Key'
-                                        : hasApiKey
-                                            ? `已配置 (${apiKeyMasked})，留空则保持不变`
-                                            : '输入 API Key，例如 sk-...'
+                                        : baseUrlChanged && hasApiKey
+                                            ? '已更改 Base URL，请重新输入对应的 API Key'
+                                            : hasApiKey
+                                                ? `已配置 (${apiKeyMasked})，留空则保持不变`
+                                                : '输入 API Key，例如 sk-...'
                                 }
                                 value={llmApiKey}
                                 disabled={loading || saving}
@@ -313,7 +357,7 @@ export default function SettingsModal({open, onClose, onSaved}: SettingsModalPro
                                     id="oms-llm-model"
                                     type="text"
                                     className={styles.input}
-                                    placeholder="例如 gpt-4o"
+                                    placeholder={llmProvider === 'anthropic' ? '例如 claude-sonnet-4-5' : '例如 deepseek-chat / gpt-4o'}
                                     value={llmModel}
                                     disabled={loading || saving}
                                     onChange={(e) => {
@@ -333,13 +377,28 @@ export default function SettingsModal({open, onClose, onSaved}: SettingsModalPro
                                     min="0"
                                     max="2"
                                     className={styles.input}
-                                    placeholder="0.7"
+                                    placeholder="0.2"
                                     value={llmTemperature}
                                     disabled={loading || saving}
                                     onChange={(e) => setLlmTemperature(e.target.value)}
                                 />
                             </div>
                         </div>
+
+                        <div className={styles.field}>
+                            <label className={styles.label} htmlFor="oms-custom-instructions">
+                                自定义指令 / 规则命名偏好（可选）
+                            </label>
+                            <textarea
+                                id="oms-custom-instructions"
+                                className={styles.textarea}
+                                placeholder="可选：补充你的家庭区域习惯、自定义规则命名格式或确认偏好（留空则使用默认规范）"
+                                value={customInstructions}
+                                disabled={loading || saving}
+                                onChange={(e) => setCustomInstructions(e.target.value)}
+                            />
+                        </div>
+
                         {testResult && (
                             <div
                                 className={testResult.success ? styles.testResultSuccess : styles.testResultError}

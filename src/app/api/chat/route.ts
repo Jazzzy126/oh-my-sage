@@ -45,12 +45,18 @@ export async function POST(request: NextRequest) {
         }
         const agent = new Agent(gateway, config);
 
-        // 如果有 sessionId，加载历史；否则新建会话并在 SSE 首包下发给前端
+        // 如果有 sessionId，校验并加载历史；否则新建会话并在 SSE 首包下发给前端
         let createdSessionId: string | undefined;
+        const store = getSessionStore();
         if (sessionId) {
+            if (typeof sessionId !== 'string' || ! /^session_[a-zA-Z0-9_-]+$/.test(sessionId)) {
+                return new Response(
+                    JSON.stringify({error: '非法的会话 ID'}),
+                    {status: 400, headers: {'Content-Type': 'application/json'}}
+                );
+            }
             await agent.loadSession(sessionId);
         } else {
-            const store = getSessionStore();
             const newSession = await store.createSession();
             agent.setSession(newSession.id);
             createdSessionId = newSession.id;
@@ -64,16 +70,25 @@ export async function POST(request: NextRequest) {
                         const sessionEvent = JSON.stringify({type: 'session', sessionId: createdSessionId});
                         controller.enqueue(encoder.encode(`data: ${sessionEvent}\n\n`));
                     }
-                    for await (const output of agent.run(message)) {
+                    for await (const output of agent.run(message, {abortSignal: request.signal})) {
+                        if (request.signal.aborted) break;
                         const data = JSON.stringify(output);
                         controller.enqueue(encoder.encode(`data: ${data}\n\n`));
                     }
-                    controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+                    if (!request.signal.aborted) {
+                        controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+                    }
                     controller.close();
                 } catch (error) {
-                    const errorOutput = {type: 'error', error: String(error)};
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify(errorOutput)}\n\n`));
-                    controller.close();
+                    if (!request.signal.aborted) {
+                        const errorOutput = {type: 'error', error: String(error)};
+                        controller.enqueue(encoder.encode(`data: ${JSON.stringify(errorOutput)}\n\n`));
+                    }
+                    try {
+                        controller.close();
+                    } catch {
+                        // 流可能已因客户端断开而关闭
+                    }
                 }
             },
         });

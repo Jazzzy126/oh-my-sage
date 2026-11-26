@@ -45,12 +45,25 @@ fs.cpSync(mcpDist, path.join(out, 'dist', 'mcp'), {
     filter: (source) => !source.endsWith('.map'),
 });
 
-// ==================== 本机常驻安装脚本 ====================
+// ==================== 本机常驻安装脚本与内置参考资源 ====================
 // 脚本按自身位置找 ../dist/mcp/mcp/index.js，随包发布后全局安装即可直接使用，无需克隆仓库
 
 fs.mkdirSync(path.join(out, 'deploy'), { recursive: true });
 for (const name of ['install-local.ps1', 'install-local.sh']) {
     fs.copyFileSync(path.join(root, 'deploy', name), path.join(out, 'deploy', name));
+}
+
+// 打包 MCP Resources 所需的规则指南与紧凑文本语法文档，使无外部 Skill 的客户端也可直接读取
+const skillSrc = path.join(root, '.agents', 'skills', 'mijia-automation');
+if (fs.existsSync(skillSrc)) {
+    const skillDest = path.join(out, '.agents', 'skills', 'mijia-automation');
+    fs.mkdirSync(path.dirname(skillDest), { recursive: true });
+    fs.cpSync(skillSrc, skillDest, { recursive: true });
+}
+const ruleDocSrc = path.join(root, 'docs', 'rule-text-format.md');
+if (fs.existsSync(ruleDocSrc)) {
+    fs.mkdirSync(path.join(out, 'docs'), { recursive: true });
+    fs.copyFileSync(ruleDocSrc, path.join(out, 'docs', 'rule-text-format.md'));
 }
 
 // ==================== package.json ====================
@@ -68,7 +81,7 @@ const pkg = {
     bin: { 'oh-my-sage-mcp': 'dist/mcp/mcp/index.js' },
     main: 'dist/mcp/mcp/index.js',
     types: 'dist/mcp/mcp/index.d.ts',
-    files: ['dist', 'deploy'],
+    files: ['dist', 'deploy', '.agents', 'docs'],
     engines: { node: '>=20' },
     dependencies,
 };

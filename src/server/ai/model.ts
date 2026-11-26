@@ -1,23 +1,30 @@
 /**
  * oh-my-sage - AI 模型配置
- * 仅支持 OpenAI 兼容接口
+ * 支持 OpenAI 兼容接口与 Anthropic 原生接口
  */
 
+import {createAnthropic} from '@ai-sdk/anthropic';
 import {createOpenAI} from '@ai-sdk/openai';
 import {generateText} from 'ai';
+
+export type ModelProvider = 'openai' | 'anthropic';
 
 /**
  * 模型配置
  */
 export interface ModelConfig {
+    /** 接口协议（默认 openai） */
+    provider?: ModelProvider;
     /** API 地址 */
     baseURL: string;
     /** API Key */
     apiKey: string;
     /** 模型名称 */
     model: string;
-    /** 温度（可选，默认 0.7） */
+    /** 温度（可选，默认 0.2，工具调用更稳定） */
     temperature?: number;
+    /** 用户自定义附加指令（如命名规范、回复偏好） */
+    customInstructions?: string;
 }
 
 /**
@@ -28,9 +35,17 @@ export function createModel(config: ModelConfig) {
     if (!config.apiKey) throw new Error('缺少 API Key 配置');
     if (!config.model) throw new Error('缺少模型名称配置');
 
+    if (config.provider === 'anthropic') {
+        return createAnthropic({
+            apiKey: config.apiKey,
+            baseURL: config.baseURL,
+        })(config.model);
+    }
+
     return createOpenAI({
         apiKey: config.apiKey,
         baseURL: config.baseURL,
+        compatibility: 'compatible',
     })(config.model);
 }
 
@@ -38,16 +53,21 @@ export function createModel(config: ModelConfig) {
  * 从环境变量读取模型配置
  *
  * 环境变量：
+ *   LLM_PROVIDER  - openai（默认）或 anthropic
  *   LLM_BASE_URL  - API 地址，如 https://api.openai.com/v1
  *   LLM_API_KEY   - API Key
- *   LLM_MODEL     - 模型名称，如 gpt-6.1-terra
+ *   LLM_MODEL     - 模型名称
+ *   LLM_TEMPERATURE - 默认 0.2
  */
 export function getModelConfigFromEnv(): ModelConfig {
+    const provider: ModelProvider = process.env.LLM_PROVIDER === 'anthropic' ? 'anthropic' : 'openai';
+    const parsedTemp = parseFloat(process.env.LLM_TEMPERATURE || '0.2');
     return {
+        provider,
         baseURL: process.env.LLM_BASE_URL || '',
         apiKey: process.env.LLM_API_KEY || '',
         model: process.env.LLM_MODEL || '',
-        temperature: parseFloat(process.env.LLM_TEMPERATURE || '0.7'),
+        temperature: Number.isFinite(parsedTemp) ? parsedTemp : 0.2,
     };
 }
 

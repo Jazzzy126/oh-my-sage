@@ -30,6 +30,7 @@ function normalizeBaseUrl(raw: string): string {
 export async function POST(request: NextRequest) {
     try {
         const body = (await request.json()) as Record<string, unknown>;
+        const rawProvider = body.llmProvider === 'anthropic' ? 'anthropic' : 'openai';
         const rawBaseUrl = typeof body.llmBaseUrl === 'string' ? body.llmBaseUrl : '';
         const rawApiKey = typeof body.llmApiKey === 'string' ? body.llmApiKey.trim() : '';
         const rawModel = typeof body.llmModel === 'string' ? body.llmModel.trim() : '';
@@ -43,6 +44,12 @@ export async function POST(request: NextRequest) {
         let apiKey = rawApiKey;
         if (!apiKey && !clearApiKey) {
             const effective = await getSettingsStore().getEffective();
+            if (effective.llmBaseUrl && baseURL !== effective.llmBaseUrl) {
+                return NextResponse.json(
+                    {success: false, error: '已修改 API Base URL，请重新输入 API Key 后再测试连通性'},
+                    {status: 400}
+                );
+            }
             apiKey = effective.llmApiKey;
         }
         if (!apiKey) {
@@ -50,6 +57,7 @@ export async function POST(request: NextRequest) {
         }
 
         const result = await testModelConnection({
+            provider: rawProvider,
             baseURL,
             apiKey,
             model: rawModel,

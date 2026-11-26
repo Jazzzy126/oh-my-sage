@@ -4,9 +4,13 @@
  */
 
 import {NextRequest, NextResponse} from 'next/server';
-import {getSessionStore} from '@/server/session/store';
+import {getSessionStore, SessionStore} from '@/server/session/store';
 
 export const runtime = 'nodejs';
+
+function invalidIdResponse() {
+    return NextResponse.json({success: false, error: '非法的 Session ID'}, {status: 400});
+}
 
 /**
  * GET /api/sessions/[id]
@@ -18,6 +22,7 @@ export async function GET(
 ) {
     try {
         const {id} = params;
+        if (!SessionStore.isValidSessionId(id)) return invalidIdResponse();
         const store = getSessionStore();
 
         const session = await store.getSessionMeta(id);
@@ -55,6 +60,7 @@ export async function PATCH(
 ) {
     try {
         const {id} = params;
+        if (!SessionStore.isValidSessionId(id)) return invalidIdResponse();
         const text = await request.text();
         if (!text) {
             return NextResponse.json({success: false, error: '请求体为空'}, {status: 400});
@@ -107,6 +113,7 @@ export async function POST(
 ) {
     try {
         const {id} = params;
+        if (!SessionStore.isValidSessionId(id)) return invalidIdResponse();
         const text = await request.text();
         if (!text) {
             return NextResponse.json({
@@ -168,6 +175,7 @@ export async function DELETE(
 ) {
     try {
         const {id} = params;
+        if (!SessionStore.isValidSessionId(id)) return invalidIdResponse();
         const store = getSessionStore();
 
         await store.deleteSession(id);

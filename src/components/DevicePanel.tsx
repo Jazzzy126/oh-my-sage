@@ -358,7 +358,7 @@ export default function DevicePanel({
                                                                 <button
                                                                     type="button"
                                                                     className={styles.insertTrigger}
-                                                                    onClick={() => onInsertDevice(device.name)}
+                                                                    onClick={() => onInsertDevice(`「${device.name}」（DID: ${device.did}）`)}
                                                                     aria-label={`在对话中引用「${device.name}」`}
                                                                     title="引用到对话"
                                                                 >
@@ -472,7 +472,7 @@ export default function DevicePanel({
                                     type="button"
                                     className={styles.modalPrimaryBtn}
                                     onClick={() => {
-                                        onInsertDevice(selectedDevice.name);
+                                        onInsertDevice(`「${selectedDevice.name}」（DID: ${selectedDevice.did}）`);
                                         setSelectedDevice(null);
                                     }}
                                 >

@@ -10,6 +10,7 @@
     "lint": "next lint",
     "test": "npx tsx src/test.ts",
     "test:unit": "tsx --test tests/**/*.test.ts",
+    "eval:agent": "tsx scripts/eval-agent.ts",
     "build:npm": "npm run build:mcp && node scripts/build-npm-package.mjs",
     "build:web": "node scripts/build-web-bundle.mjs"
   },

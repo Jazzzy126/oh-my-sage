@@ -21,6 +21,29 @@ export interface SessionMeta {
 }
 
 /**
+ * Session 消息单步记录（保留多步 ReAct 真实因果序列）
+ */
+export interface SessionStep {
+    /** 该步伴随工具调用的过渡说明文本 */
+    text?: string;
+    /** 原生推理模型的 reasoning 内容 */
+    reasoning?: string;
+    /** 该步发起并完成的工具调用列表 */
+    toolCalls?: ToolCall[];
+}
+
+/**
+ * 单轮对话 Token 与耗时统计
+ */
+export interface TurnUsage {
+    promptTokens?: number;
+    completionTokens?: number;
+    totalTokens?: number;
+    durationMs?: number;
+    stepCount?: number;
+}
+
+/**
  * Session 消息
  */
 export interface SessionMessage {
@@ -30,6 +53,8 @@ export interface SessionMessage {
     timestamp: string;
     thinking?: string;
     toolCalls?: ToolCall[];
+    steps?: SessionStep[];
+    usage?: TurnUsage;
 }
 
 /**
@@ -85,10 +110,25 @@ export class SessionStore {
     }
 
     /**
+     * 校验 Session ID 合法性，防止路径穿越读写任意文件
+     */
+    public static isValidSessionId(sessionId: string): boolean {
+        return typeof sessionId === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(sessionId);
+    }
+
+    /**
      * 获取 Session 文件路径
      */
     private getSessionPath(sessionId: string): string {
-        return path.join(this.baseDir, `${sessionId}.jsonl`);
+        if (!SessionStore.isValidSessionId(sessionId)) {
+            throw new Error(`非法的 Session ID: ${sessionId}`);
+        }
+        const resolved = path.resolve(this.baseDir, `${sessionId}.jsonl`);
+        const rel = path.relative(this.baseDir, resolved);
+        if (rel.startsWith('..') || path.isAbsolute(rel)) {
+            throw new Error(`Session 路径越界: ${sessionId}`);
+        }
+        return resolved;
     }
 
     /**
@@ -247,20 +287,29 @@ export class SessionStore {
     }
 
     /**
-     * 生成标题
+     * 生成干净可读的会话标题（剥离引用元数据后缀与常见口语前缀）
      */
     private generateTitle(content: string): string {
-        let title = content.trim();
+        let title = content
+            .replace(/（(?:规则\s*)?ID:\s*[^）]+）/gi, '')
+            .replace(/（DID:\s*[^）]+）/gi, '')
+            .replace(/\((?:rule\s*)?id:\s*[^)]+\)/gi, '')
+            .replace(/\(did:\s*[^)]+\)/gi, '')
+            .replace(/\s+/g, ' ')
+            .trim();
 
-        const prefixes = ['帮我', '请', '我想', '我要', '能否', '可以'];
+        const prefixes = ['帮我', '请你帮我', '请帮我', '麻烦帮我', '请', '我想', '我要', '能否', '可以'];
         for (const prefix of prefixes) {
             if (title.startsWith(prefix)) {
-                title = title.substring(prefix.length);
+                title = title.substring(prefix.length).trim();
+                break;
             }
         }
 
-        if (title.length > 20) {
-            title = title.substring(0, 20) + '...';
+        title = title.replace(/^[，,：:、\s]+|[：:，,。！？!?\s]+$/g, '');
+
+        if (title.length > 22) {
+            title = title.substring(0, 22) + '...';
         }
 
         return title || '新对话';

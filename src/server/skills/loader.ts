@@ -20,6 +20,21 @@ export interface SkillMeta {
     description: string;
 }
 
+export interface SkillFilterOptions {
+    /** 按业务领域过滤 Skill，避免无关开发工具类 Skill 污染垂直 Agent 提示词 */
+    domainFilter?: 'smart-home';
+}
+
+const SMART_HOME_SKILL_RE = /mijia|xiaomi|iot|smart[-_ ]?home|gateway|米家|中枢|网关|智能家居|自动化规则|设备联动/i;
+
+function matchesDomainFilter(skill: SkillMeta, domainFilter?: 'smart-home'): boolean {
+    if (!domainFilter) return true;
+    if (domainFilter === 'smart-home') {
+        return SMART_HOME_SKILL_RE.test(`${skill.name} ${skill.description}`);
+    }
+    return true;
+}
+
 /**
  * Skill 完整定义（渐进式披露第二层）
  */
@@ -196,13 +211,15 @@ export function getSkills(): Skill[] {
 
 /**
  * 获取 Skill 元数据列表（渐进式披露第一层）
- * 只返回 name 和 description
+ * 只返回 name 和 description，支持按领域过滤
  */
-export function getSkillCatalog(): SkillMeta[] {
-    return getSkills().map(s => ({
-        name: s.name,
-        description: s.description,
-    }));
+export function getSkillCatalog(options?: SkillFilterOptions): SkillMeta[] {
+    return getSkills()
+        .filter(s => matchesDomainFilter(s, options?.domainFilter))
+        .map(s => ({
+            name: s.name,
+            description: s.description,
+        }));
 }
 
 /**
@@ -216,8 +233,8 @@ export function getSkillByName(name: string): Skill | null {
  * 格式化 Skill catalog 为系统提示（渐进式披露第一层）
  * 只包含 name 和 description
  */
-export function formatSkillCatalogForPrompt(): string {
-    const catalog = getSkillCatalog();
+export function formatSkillCatalogForPrompt(options?: SkillFilterOptions): string {
+    const catalog = getSkillCatalog(options);
 
     if (catalog.length === 0) {
         return '';

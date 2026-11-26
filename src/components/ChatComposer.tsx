@@ -194,7 +194,7 @@ const ChatComposer = React.memo(function ChatComposer({
                     title: dev.name,
                     meta: `${room} · ${dev.online ? '在线' : '离线'}`,
                     active: dev.online,
-                    insertText: `「${dev.name}」`,
+                    insertText: `「${dev.name}」（DID: ${dev.did}）`,
                 });
             }
         }

@@ -50,13 +50,13 @@ video → ui-sample → graph-diff → local-tested → gateway-roundtrip → ru
 
 关键规则：
 
-- ⚠️ **`mijia_create_variable` 的 `type: "number"` 有 bug**：数字类型始终报"value 必须与 type 匹配"，字符串类型正常。**创建数字变量优先走 `mijia_patch_graph` 的 `variables` 参数**（规则变量声明）；`mijia_create_variable` 仅在确认是字符串变量或测试 API 行为时使用。
-- **推荐的标准做法**（数字和字符串都支持）：
+- **本规则变量（推荐标准做法，数字和字符串均支持）**：在创建或修改规则时直接通过 `mijia_create_graph` / `mijia_patch_graph` 的 `variables` 参数（或紧凑文本中的 `var $R.变量名`）随规则一起声明：
   ```
   mijia_patch_graph (修改规则)
     → variables: [{id: "Vxxxxxxxxxx", name: "显示名", scope: "rule", type: "number", value: 0}]
   ```
-  ID 格式：`V` + 10 位字母数字（如 `VtestNum01`）；`scope: "rule"` 表示本规则变量。两种方式创建的变量在 UI 都正常显示（早期"变量已丢失"问题已不再复现）。
+  ID 格式：纯字母数字（如 `VtestNum01`）；`scope: "rule"` 表示本规则变量，服务端会自动替换为真实规则作用域 `R<规则ID>` 并在失败时自动回滚。
+- **跨规则共享的全局变量**：使用 `mijia_create_variable` 创建（注意 `type: "number"` 时初始值 `value` 应传 JSON 数字如 `0`，`type: "string"` 时传字符串）。
 - `mijia_set_variable` 只修改已存在变量，不会自动创建。
 - `varSetNumber`、`varSetString`、`deviceInputSetVar` 和 `deviceGetSetVar` 只写已存在变量，不能用作变量创建器。
 - 变量 ID 必须匹配 `^[a-zA-Z0-9]+$`，不能含下划线、连字符或中文；显示名称 `name` 可以包含中文。
@@ -68,7 +68,7 @@ video → ui-sample → graph-diff → local-tested → gateway-roundtrip → ru
 
 - 作用域名 = `R` + **规则 ID 的数字部分**，去掉 `graph_` 前缀。例：规则 `graph_1700000000000` → 作用域 `R1700000000000`；规则 `1700000000000` → `R1700000000000`。可用 `mijia_call_api getVarScopeList` 核对。
 - 节点里写 `"scope": "rule"` 的自动替换**只发生在**带 `variables` 参数的工具里（`mijia_create_graph`、`mijia_graph_draft_begin`、`mijia_patch_graph`）。
-- **修正**：旧文档说"`mijia_patch_graph` 和 `mijia_update_graph` 都没有 `variables` 参数"**已过时**。按当前实测，`mijia_patch_graph` 支持 `variables` 并能为已有规则新增变量；`mijia_update_graph` 是否支持需按当前 MCP 版本核对。旧的"必须先单独调用 `mijia_create_variable` 并显式传真实作用域字符串"在数字变量场景**不要再走**（见上方 bug 说明）。
+- **补充说明**：`mijia_create_graph`、`mijia_patch_graph` 和 `mijia_put_graph_text` 均支持随规则自动创建新变量，无需先手工拼凑 `R<规则ID>` 单独调用 `mijia_create_variable`。
 
 ### 工具缺失或写入失败时
 

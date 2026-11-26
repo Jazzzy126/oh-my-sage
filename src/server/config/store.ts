@@ -10,15 +10,19 @@ import type {ModelConfig} from '@/server/ai/model';
 
 // ==================== 类型定义 ====================
 
+export type LlmProvider = 'openai' | 'anthropic';
+
 /**
  * 持久化在服务端的完整配置（含敏感字段）
  */
 export interface RuntimeSettings {
     gatewayUrl: string;
+    llmProvider: LlmProvider;
     llmBaseUrl: string;
     llmApiKey: string;
     llmModel: string;
     llmTemperature: number;
+    customInstructions: string;
 }
 
 /**
@@ -26,9 +30,11 @@ export interface RuntimeSettings {
  */
 export interface PublicSettings {
     gatewayUrl: string;
+    llmProvider: LlmProvider;
     llmBaseUrl: string;
     llmModel: string;
     llmTemperature: number;
+    customInstructions: string;
     hasApiKey: boolean;
     apiKeyMasked: string;
     gatewayConfigured: boolean;
@@ -40,16 +46,25 @@ export interface PublicSettings {
  */
 export interface SettingsPatch {
     gatewayUrl?: string;
+    llmProvider?: LlmProvider;
     llmBaseUrl?: string;
     llmApiKey?: string;
     clearApiKey?: boolean;
     llmModel?: string;
     llmTemperature?: number;
+    customInstructions?: string;
 }
 
 // ==================== 工具函数 ====================
 
-const DEFAULT_TEMPERATURE = 0.7;
+export const DEFAULT_TEMPERATURE = 0.2;
+const MAX_CUSTOM_INSTRUCTIONS_LENGTH = 4000;
+
+function parseProvider(raw: unknown, fallback: LlmProvider = 'openai'): LlmProvider {
+    if (raw === undefined || raw === null || raw === '') return fallback;
+    if (raw === 'openai' || raw === 'anthropic') return raw;
+    throw new Error('模型接口类型仅支持 openai 或 anthropic');
+}
 
 function normalizeHttpUrl(raw: string, fieldName: string): string {
     const trimmed = raw.trim().replace(/\/+$/, '');
@@ -108,12 +123,14 @@ export class SettingsStore {
             if (!parsed || typeof parsed !== 'object') return {};
             return {
                 gatewayUrl: typeof parsed.gatewayUrl === 'string' ? parsed.gatewayUrl : '',
+                llmProvider: parsed.llmProvider === 'anthropic' ? 'anthropic' : 'openai',
                 llmBaseUrl: typeof parsed.llmBaseUrl === 'string' ? parsed.llmBaseUrl : '',
                 llmApiKey: typeof parsed.llmApiKey === 'string' ? parsed.llmApiKey : '',
                 llmModel: typeof parsed.llmModel === 'string' ? parsed.llmModel : '',
                 llmTemperature: typeof parsed.llmTemperature === 'number' && Number.isFinite(parsed.llmTemperature)
                     ? parsed.llmTemperature
-                    : DEFAULT_TEMPERATURE,
+                    : undefined,
+                customInstructions: typeof parsed.customInstructions === 'string' ? parsed.customInstructions : '',
             };
         } catch {
             return {};
@@ -127,13 +144,16 @@ export class SettingsStore {
         const stored = await this.readStored();
         const envTemp = process.env.LLM_TEMPERATURE ? Number(process.env.LLM_TEMPERATURE) : NaN;
         const fallbackTemp = Number.isFinite(envTemp) ? envTemp : DEFAULT_TEMPERATURE;
+        const envProvider = process.env.LLM_PROVIDER === 'anthropic' ? 'anthropic' : 'openai';
 
         const effective: RuntimeSettings = {
             gatewayUrl: stored.gatewayUrl || (process.env.GATEWAY_URL || '').trim().replace(/\/+$/, ''),
+            llmProvider: stored.llmProvider || envProvider,
             llmBaseUrl: stored.llmBaseUrl || (process.env.LLM_BASE_URL || '').trim().replace(/\/+$/, ''),
             llmApiKey: stored.llmApiKey || (process.env.LLM_API_KEY || '').trim(),
             llmModel: stored.llmModel || (process.env.LLM_MODEL || '').trim(),
             llmTemperature: stored.llmTemperature ?? fallbackTemp,
+            customInstructions: stored.customInstructions ?? '',
         };
         this.cache = effective;
         return {...effective};
@@ -153,17 +173,44 @@ export class SettingsStore {
     async update(patch: SettingsPatch): Promise<PublicSettings> {
         const run = this.writeQueue.then(async () => {
             const current = await this.getEffective();
+            const nextBaseUrl = patch.llmBaseUrl !== undefined
+                ? normalizeHttpUrl(patch.llmBaseUrl, 'API Base URL')
+                : current.llmBaseUrl;
+            const hasNewApiKey = patch.llmApiKey !== undefined && patch.llmApiKey.trim() !== '';
+
+            // 安全防护：修改已配置的 API Base URL 时，禁止静默复用旧 API Key，防止原密钥被重定向至第三方服务器泄露
+            if (
+                patch.llmBaseUrl !== undefined &&
+                current.llmBaseUrl &&
+                nextBaseUrl !== current.llmBaseUrl &&
+                current.llmApiKey &&
+                !hasNewApiKey &&
+                !patch.clearApiKey
+            ) {
+                throw new Error('修改 API Base URL 时必须重新输入 API Key（防止已保存的密钥发送至新地址）');
+            }
+
+            let nextCustomInstructions = current.customInstructions;
+            if (patch.customInstructions !== undefined) {
+                const trimmedInstructions = patch.customInstructions.trim();
+                if (trimmedInstructions.length > MAX_CUSTOM_INSTRUCTIONS_LENGTH) {
+                    throw new Error(`自定义指令不能超过 ${MAX_CUSTOM_INSTRUCTIONS_LENGTH} 个字符`);
+                }
+                nextCustomInstructions = trimmedInstructions;
+            }
+
             const next: RuntimeSettings = {
                 gatewayUrl: patch.gatewayUrl !== undefined
                     ? normalizeHttpUrl(patch.gatewayUrl, '网关地址')
                     : current.gatewayUrl,
-                llmBaseUrl: patch.llmBaseUrl !== undefined
-                    ? normalizeHttpUrl(patch.llmBaseUrl, 'API Base URL')
-                    : current.llmBaseUrl,
+                llmProvider: patch.llmProvider !== undefined
+                    ? parseProvider(patch.llmProvider, current.llmProvider)
+                    : current.llmProvider,
+                llmBaseUrl: nextBaseUrl,
                 llmApiKey: patch.clearApiKey
                     ? ''
-                    : patch.llmApiKey !== undefined && patch.llmApiKey.trim() !== ''
-                        ? patch.llmApiKey.trim()
+                    : hasNewApiKey
+                        ? patch.llmApiKey!.trim()
                         : current.llmApiKey,
                 llmModel: patch.llmModel !== undefined
                     ? patch.llmModel.trim()
@@ -171,6 +218,7 @@ export class SettingsStore {
                 llmTemperature: patch.llmTemperature !== undefined
                     ? parseTemperature(patch.llmTemperature, current.llmTemperature)
                     : current.llmTemperature,
+                customInstructions: nextCustomInstructions,
             };
 
             await fsp.mkdir(path.dirname(this.filePath), {recursive: true});
@@ -189,10 +237,12 @@ export class SettingsStore {
     async getModelConfig(): Promise<ModelConfig> {
         const effective = await this.getEffective();
         return {
+            provider: effective.llmProvider,
             baseURL: effective.llmBaseUrl,
             apiKey: effective.llmApiKey,
             model: effective.llmModel,
             temperature: effective.llmTemperature,
+            customInstructions: effective.customInstructions,
         };
     }
 }
@@ -201,9 +251,11 @@ export function toPublicSettings(settings: RuntimeSettings): PublicSettings {
     const hasApiKey = Boolean(settings.llmApiKey);
     return {
         gatewayUrl: settings.gatewayUrl,
+        llmProvider: settings.llmProvider,
         llmBaseUrl: settings.llmBaseUrl,
         llmModel: settings.llmModel,
         llmTemperature: settings.llmTemperature,
+        customInstructions: settings.customInstructions,
         hasApiKey,
         apiKeyMasked: maskApiKey(settings.llmApiKey),
         gatewayConfigured: Boolean(settings.gatewayUrl),

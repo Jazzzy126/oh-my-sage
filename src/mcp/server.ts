@@ -12,6 +12,7 @@ import { createGatewayManager } from "../core/index.js";
 import type { GatewayManager } from "../core/gateway/manager.js";
 import { getConfig, type Config } from "./config.js";
 import { GraphDraftStore } from "./tools/graphDraft.js";
+import { registerMcpResourcesAndPrompts } from "./resources.js";
 import {
   registerAuthTools,
   registerDeviceTools,
@@ -66,6 +67,9 @@ export function createServer(
   registerGraphTools(server, gatewayManager, drafts);
   registerVariableTools(server, gatewayManager);
   registerMiscTools(server, gatewayManager);
+
+  // 注册文档 Resources 与标准工作流 Prompts
+  registerMcpResourcesAndPrompts(server);
 
   return server;
 }

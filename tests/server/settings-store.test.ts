@@ -33,7 +33,9 @@ test('未设置环境变量和磁盘配置时返回空配置且不报错', async
         assert.equal(pub.hasApiKey, false);
         assert.equal(pub.gatewayConfigured, false);
         assert.equal(pub.llmConfigured, false);
-        assert.equal(pub.llmTemperature, 0.7);
+        assert.equal(pub.llmTemperature, 0.2);
+        assert.equal(pub.llmProvider, 'openai');
+        assert.equal(pub.customInstructions, '');
     } finally {
         Object.assign(process.env, savedEnv);
         fs.rmSync(dir, {recursive: true, force: true});
@@ -67,10 +69,25 @@ test('保存配置后可跨实例读取且对 API Key 脱敏、更新时留空�
         assert.equal(modelCfg.temperature, 0.5);
 
         // 仅改模型名时不传 llmApiKey，应保留原 Key
-        const updated = await store2.update({llmModel: 'gpt-4.1'});
+        const updated = await store2.update({llmModel: 'gpt-4.1', customInstructions: '偏好简短命名'});
         assert.equal(updated.llmModel, 'gpt-4.1');
+        assert.equal(updated.customInstructions, '偏好简短命名');
         assert.equal(updated.hasApiKey, true);
         assert.equal((await store2.getModelConfig()).apiKey, 'sk-1234567890abcdef');
+
+        // 安全防护：修改已配置的 llmBaseUrl 但不重新输入 llmApiKey 时拒绝保存，防止原 Key 外泄
+        await assert.rejects(
+            () => store2.update({llmBaseUrl: 'https://evil.example.com/v1'}),
+            /必须重新输入 API Key/
+        );
+
+        // 同时提供新 llmBaseUrl 与新 llmApiKey 时允许更新
+        const migrated = await store2.update({
+            llmBaseUrl: 'https://api2.example.com/v1',
+            llmApiKey: 'sk-newkey987654321',
+        });
+        assert.equal(migrated.llmBaseUrl, 'https://api2.example.com/v1');
+        assert.equal((await store2.getModelConfig()).apiKey, 'sk-newkey987654321');
 
         // 显式清空 Key
         const cleared = await store2.update({clearApiKey: true});
@@ -92,6 +109,17 @@ test('非法 URL 或 Temperature 抛出明确错误', async () => {
         await assert.rejects(
             () => store.update({llmTemperature: 3}),
             /0 到 2/
+        );
+
+        // 已保存 Key 时单独修改 Base URL 必须报错拦截，防止密钥被重定向泄露
+        await store.update({
+            llmBaseUrl: 'https://api.openai.com/v1',
+            llmApiKey: 'sk-secret-key-1234',
+            llmModel: 'gpt-4o',
+        });
+        await assert.rejects(
+            () => store.update({llmBaseUrl: 'https://evil.example.com/v1'}),
+            /重新输入 API Key/
         );
     } finally {
         fs.rmSync(dir, {recursive: true, force: true});

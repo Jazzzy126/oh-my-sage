@@ -18,14 +18,15 @@ import {
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import ChatProcessChain, {type ToolCallItem} from './ChatProcessChain';
+import ChatProcessChain, {type ToolCallItem, type ProcessUsageInfo} from './ChatProcessChain';
 import ChatComposer, {type MentionDevice, type MentionGraph} from './ChatComposer';
 import styles from './Chat.module.css';
 
 interface AgentOutput {
-    type: 'session' | 'thinking' | 'tool_start' | 'tool_result' | 'complete' | 'waiting_input' | 'error';
+    type: 'session' | 'text' | 'thinking' | 'tool_start' | 'tool_result' | 'complete' | 'waiting_input' | 'error';
     sessionId?: string;
     content?: string;
+    toolCallId?: string;
     tool?: string;
     args?: any;
     result?: any;
@@ -33,6 +34,7 @@ interface AgentOutput {
     options?: string[];
     error?: string;
     message?: string;
+    usage?: ProcessUsageInfo;
 }
 
 interface ChatMessage {
@@ -43,6 +45,7 @@ interface ChatMessage {
     process?: {
         toolCalls: ToolCallItem[];
         thinking: string;
+        usage?: ProcessUsageInfo;
     };
 }
 
@@ -53,6 +56,7 @@ interface SessionMessage {
     timestamp: string;
     thinking?: string;
     toolCalls?: ToolCallItem[];
+    usage?: ProcessUsageInfo;
 }
 
 interface ChatProps {
@@ -249,12 +253,14 @@ export default function Chat({
                 seq: msg.seq,
                 process: (msg.toolCalls && msg.toolCalls.length > 0) || msg.thinking ? {
                     toolCalls: (msg.toolCalls || []).map(tc => ({
+                        toolCallId: tc.toolCallId,
                         tool: tc.tool || '',
                         args: tc.args,
                         result: tc.result,
                         success: tc.success !== false,
                     })),
                     thinking: msg.thinking || '',
+                    usage: msg.usage,
                 } : undefined,
             }));
             setMessages(convertedMessages);
@@ -361,21 +367,24 @@ export default function Chat({
         setShowScrollBottom(false);
 
         let currentThinking = '';
+        let currentStepText = '';
         const currentToolCalls: ToolCallItem[] = [];
         let finalContent = '';
+        let finalUsage: ProcessUsageInfo | undefined;
         let resolvedSessionId = currentSessionId;
         setStreamThinking('');
         setStreamToolCalls([]);
         setStreamFinalContent('');
 
-        const flushThinking = () => {
+        const flushStreamState = () => {
             rafIdRef.current = null;
             setStreamThinking(currentThinking);
+            setStreamFinalContent(currentStepText);
         };
 
-        const scheduleThinkingFlush = () => {
+        const scheduleStreamFlush = () => {
             if (rafIdRef.current === null) {
-                rafIdRef.current = requestAnimationFrame(flushThinking);
+                rafIdRef.current = requestAnimationFrame(flushStreamState);
             }
         };
 
@@ -417,21 +426,54 @@ export default function Chat({
                                 setCurrentSessionId(output.sessionId);
                             }
                             break;
+                        case 'text':
+                            currentStepText += output.content || '';
+                            finalContent = currentStepText;
+                            scheduleStreamFlush();
+                            break;
                         case 'thinking':
                             currentThinking += output.content || '';
-                            scheduleThinkingFlush();
+                            scheduleStreamFlush();
                             break;
                         case 'tool_start':
                             cancelPendingRaf();
+                            if (currentStepText) {
+                                // 本步先输出的文本是调用工具前的过渡说明，归入思考链并清空正文预览
+                                currentThinking += (currentThinking ? '\n' : '') + currentStepText;
+                                currentStepText = '';
+                                finalContent = '';
+                                setStreamFinalContent('');
+                            }
+                            if (output.tool === 'think' && typeof output.args?.thought === 'string' && output.args.thought) {
+                                currentThinking += (currentThinking ? '\n' : '') + output.args.thought;
+                            }
                             setStreamThinking(currentThinking);
-                            currentToolCalls.push({tool: output.tool || '', args: output.args, success: false});
+                            currentToolCalls.push({
+                                toolCallId: output.toolCallId,
+                                tool: output.tool || '',
+                                args: output.args,
+                                success: false,
+                            });
                             setStreamToolCalls([...currentToolCalls]);
                             break;
                         case 'tool_result': {
-                            const lastIndex = currentToolCalls.length - 1;
-                            if (lastIndex >= 0) {
-                                currentToolCalls[lastIndex].success = output.result?.success !== false;
-                                currentToolCalls[lastIndex].result = output.result;
+                            let matchIdx = -1;
+                            if (output.toolCallId) {
+                                matchIdx = currentToolCalls.findIndex(tc => tc.toolCallId === output.toolCallId);
+                            }
+                            if (matchIdx < 0) {
+                                // 兼容回退：找最早一个同名且尚未收到 result 的调用，否则取末尾
+                                matchIdx = currentToolCalls.findIndex(
+                                    tc => tc.tool === output.tool && tc.result === undefined
+                                );
+                                if (matchIdx < 0) matchIdx = currentToolCalls.length - 1;
+                            }
+                            if (matchIdx >= 0) {
+                                currentToolCalls[matchIdx] = {
+                                    ...currentToolCalls[matchIdx],
+                                    success: output.result?.success !== false,
+                                    result: output.result,
+                                };
                                 setStreamToolCalls([...currentToolCalls]);
                             }
                             break;
@@ -439,7 +481,8 @@ export default function Chat({
                         case 'complete':
                             cancelPendingRaf();
                             setStreamThinking(currentThinking);
-                            finalContent = output.message || output.content || '';
+                            finalContent = output.message ?? output.content ?? currentStepText;
+                            finalUsage = output.usage;
                             setStreamFinalContent(finalContent);
                             break;
                         case 'waiting_input': {
@@ -471,6 +514,7 @@ export default function Chat({
                     timestamp: new Date().toISOString(),
                     thinking: currentThinking || undefined,
                     toolCalls: currentToolCalls.length > 0 ? currentToolCalls : undefined,
+                    usage: finalUsage,
                 };
                 const userSessionMessage: SessionMessage = {
                     seq: 0,
@@ -489,6 +533,7 @@ export default function Chat({
                 process: currentToolCalls.length > 0 || currentThinking ? {
                     toolCalls: currentToolCalls,
                     thinking: currentThinking,
+                    usage: finalUsage,
                 } : undefined,
             };
             setMessages(prev => {
@@ -693,6 +738,7 @@ export default function Chat({
                                 thinking={thinking}
                                 toolCalls={toolCalls}
                                 streaming={false}
+                                usage={msg.process?.usage}
                             />
                         )}
                         <AssistantMarkdown content={msg.content}/>
